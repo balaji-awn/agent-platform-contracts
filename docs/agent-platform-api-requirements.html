@@ -1,0 +1,1310 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Platform API Requirements</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500&display=swap">
+<style>
+  :root {
+    --ground: #F5F7F8;
+    --surface: #FFFFFF;
+    --surface-2: #EDF1F2;
+    --ink: #121A1D;
+    --ink-2: #41525A;
+    --ink-3: #6B7D85;
+    --line: #D8E0E3;
+    --line-strong: #B4C3C8;
+    --accent: #0B6E72;
+    --accent-ink: #06565A;
+    --accent-wash: #E0EFEF;
+    --amber: #8F5400;
+    --amber-wash: #F8EBD8;
+    --crimson: #A12A3A;
+    --crimson-wash: #F8E3E6;
+    --green: #1C6B49;
+    --radius: 10px;
+    --measure: 68ch;
+    color-scheme: light;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0D1416;
+      --surface: #121D20;
+      --surface-2: #18262A;
+      --ink: #E4EDEF;
+      --ink-2: #AABEC3;
+      --ink-3: #7F979D;
+      --line: #233438;
+      --line-strong: #384E53;
+      --accent: #5CC4C1;
+      --accent-ink: #8FDAD7;
+      --accent-wash: #0F2C2E;
+      --amber: #E2A55E;
+      --amber-wash: #2C2317;
+      --crimson: #EA8D98;
+      --crimson-wash: #31191D;
+      --green: #62BC8F;
+      color-scheme: dark;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground: #0D1416;
+    --surface: #121D20;
+    --surface-2: #18262A;
+    --ink: #E4EDEF;
+    --ink-2: #AABEC3;
+    --ink-3: #7F979D;
+    --line: #233438;
+    --line-strong: #384E53;
+    --accent: #5CC4C1;
+    --accent-ink: #8FDAD7;
+    --accent-wash: #0F2C2E;
+    --amber: #E2A55E;
+    --amber-wash: #2C2317;
+    --crimson: #EA8D98;
+    --crimson-wash: #31191D;
+    --green: #62BC8F;
+    color-scheme: dark;
+  }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding-inline: 20px;
+    padding-block: 56px 72px;
+  }
+
+  h1, h2, h3, .eyebrow, .chip, .toc a {
+    font-family: Archivo, "IBM Plex Sans", sans-serif;
+  }
+
+  code, kbd, .mono, .method, .code {
+    font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  /* ---------- masthead ---------- */
+
+  .masthead {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding-bottom: 32px;
+    border-bottom: 2px solid var(--ink);
+  }
+
+  .eyebrow {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent-ink);
+  }
+
+  h1 {
+    font-size: clamp(32px, 5vw, 46px);
+    font-weight: 700;
+    line-height: 1.08;
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+    margin: 0;
+  }
+
+  .lede {
+    max-width: var(--measure);
+    font-size: 18px;
+    color: var(--ink-2);
+    margin: 0;
+  }
+
+  .meta {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 14px 24px;
+    margin: 8px 0 0;
+    padding-top: 20px;
+    border-top: 1px solid var(--line);
+  }
+
+  .meta div {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .meta dt {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+
+  .meta dd {
+    margin: 0;
+    font-size: 14px;
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    color: var(--ink);
+  }
+
+  /* ---------- layout ---------- */
+
+  .layout {
+    display: grid;
+    gap: 48px;
+    margin-top: 48px;
+    align-items: start;
+  }
+
+  @media (min-width: 960px) {
+    .layout {
+      grid-template-columns: 208px minmax(0, 1fr);
+    }
+    .toc {
+      position: sticky;
+      top: 28px;
+    }
+  }
+
+  .toc h2 {
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin: 0 0 12px;
+  }
+
+  .toc ol {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    counter-reset: toc;
+  }
+
+  .toc a {
+    display: flex;
+    gap: 10px;
+    padding: 5px 8px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--ink-2);
+    text-decoration: none;
+    counter-increment: toc;
+  }
+
+  .toc a::before {
+    content: counter(toc);
+    color: var(--ink-3);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .toc a:hover {
+    background: var(--surface-2);
+    color: var(--accent-ink);
+  }
+
+  main {
+    display: flex;
+    flex-direction: column;
+    gap: 56px;
+    min-width: 0;
+  }
+
+  section {
+    scroll-margin-top: 24px;
+  }
+
+  h2.section-title {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin: 0 0 8px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  h2.section-title .num {
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+  }
+
+  h3 {
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    line-height: 1.25;
+    text-wrap: balance;
+    margin: 0 0 10px;
+  }
+
+  h4 {
+    font-family: Archivo, sans-serif;
+    font-size: 15px;
+    font-weight: 600;
+    margin: 24px 0 8px;
+  }
+
+  p, li {
+    max-width: var(--measure);
+  }
+
+  main p {
+    margin: 0 0 14px;
+    color: var(--ink-2);
+  }
+
+  main ul {
+    margin: 0 0 14px;
+    padding-left: 20px;
+    color: var(--ink-2);
+  }
+
+  main li {
+    margin-bottom: 6px;
+  }
+
+  strong {
+    color: var(--ink);
+    font-weight: 600;
+  }
+
+  code {
+    font-size: 0.9em;
+    background: var(--surface-2);
+    color: var(--ink);
+    padding: 1px 5px;
+    border-radius: 4px;
+  }
+
+  a {
+    color: var(--accent-ink);
+  }
+
+  /* ---------- at a glance ---------- */
+
+  .glance {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    overflow: hidden;
+    margin-top: 28px;
+  }
+
+  .glance div {
+    background: var(--surface);
+    padding: 18px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .glance dt {
+    font-family: Archivo, sans-serif;
+    font-weight: 600;
+    font-size: 15px;
+    color: var(--ink);
+  }
+
+  .glance dd {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--ink-2);
+    max-width: none;
+  }
+
+  /* ---------- endpoints ---------- */
+
+  .endpoints {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+
+  .ep {
+    background: var(--surface);
+    display: grid;
+    grid-template-columns: 62px minmax(0, 1fr);
+    gap: 4px 14px;
+    padding: 16px 20px;
+  }
+
+  @media (max-width: 560px) {
+    .ep {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+
+  .method {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    padding: 3px 0;
+    text-align: center;
+    border-radius: 4px;
+    height: fit-content;
+    background: var(--accent-wash);
+    color: var(--accent-ink);
+  }
+
+  .method.post {
+    background: var(--amber-wash);
+    color: var(--amber);
+  }
+
+  .ep .path {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 14.5px;
+    font-weight: 500;
+    color: var(--ink);
+    overflow-wrap: anywhere;
+  }
+
+  .ep .note {
+    grid-column: 2;
+    font-size: 14px;
+    color: var(--ink-2);
+    max-width: var(--measure);
+  }
+
+  @media (max-width: 560px) {
+    .ep .note {
+      grid-column: 1;
+    }
+  }
+
+  /* ---------- tables ---------- */
+
+  .scroller {
+    overflow-x: auto;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--surface);
+  }
+
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 14px;
+  }
+
+  th, td {
+    text-align: left;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }
+
+  th {
+    font-family: Archivo, sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    white-space: nowrap;
+    background: var(--surface-2);
+  }
+
+  tbody tr:last-child td {
+    border-bottom: none;
+  }
+
+  td.code, th.num, td.num {
+    font-family: "IBM Plex Mono", monospace;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  td em {
+    color: var(--ink-3);
+    font-style: normal;
+  }
+
+  .chip {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    padding: 2px 8px;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+
+  .chip.yes {
+    background: var(--amber-wash);
+    color: var(--amber);
+  }
+
+  .chip.no {
+    background: var(--crimson-wash);
+    color: var(--crimson);
+  }
+
+  .chip.neutral {
+    background: var(--surface-2);
+    color: var(--ink-3);
+  }
+
+  /* ---------- requirement callouts ---------- */
+
+  .req {
+    display: grid;
+    grid-template-columns: 52px minmax(0, 1fr);
+    gap: 16px;
+    padding: 14px 18px 14px 14px;
+    margin: 18px 0;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 var(--radius) var(--radius) 0;
+  }
+
+  .req .id {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent-ink);
+    padding-top: 2px;
+  }
+
+  .req p {
+    margin: 0;
+    color: var(--ink);
+    font-size: 15px;
+  }
+
+  .req p + p {
+    margin-top: 6px;
+    color: var(--ink-2);
+    font-size: 14px;
+  }
+
+  .must {
+    font-weight: 600;
+    color: var(--ink);
+  }
+
+  /* ---------- ordered rules ---------- */
+
+  ol.rules {
+    counter-reset: rule;
+    list-style: none;
+    margin: 0 0 14px;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  ol.rules li {
+    counter-increment: rule;
+    display: grid;
+    grid-template-columns: 26px minmax(0, 1fr);
+    gap: 12px;
+    color: var(--ink-2);
+    max-width: var(--measure);
+  }
+
+  ol.rules li::before {
+    content: counter(rule);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent);
+    background: var(--accent-wash);
+    border-radius: 4px;
+    height: 22px;
+    display: grid;
+    place-items: center;
+  }
+
+  /* ---------- diagrams ---------- */
+
+  figure {
+    margin: 0 0 28px;
+  }
+
+  .plate {
+    background: #FBFCFD;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius);
+    padding: 18px 16px;
+    overflow-x: auto;
+  }
+
+  .plate pre.mermaid {
+    margin: 0;
+    min-width: 640px;
+  }
+
+  figcaption {
+    font-size: 13.5px;
+    color: var(--ink-3);
+    margin-top: 10px;
+    max-width: var(--measure);
+  }
+
+  /* ---------- open questions ---------- */
+
+  .questions {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+
+  .questions div {
+    background: var(--surface);
+    padding: 14px 18px;
+    display: grid;
+    grid-template-columns: 74px minmax(0, 1fr);
+    gap: 14px;
+    align-items: baseline;
+  }
+
+  @media (max-width: 560px) {
+    .questions div {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 4px;
+    }
+  }
+
+  .questions .tag {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--ink-3);
+  }
+
+  .questions p {
+    margin: 0;
+    font-size: 14.5px;
+  }
+
+  footer {
+    margin-top: 64px;
+    padding-top: 20px;
+    border-top: 1px solid var(--line);
+    font-size: 13px;
+    color: var(--ink-3);
+  }
+
+  footer p {
+    max-width: var(--measure);
+    margin: 0;
+  }
+
+  a:focus-visible, .toc a:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * {
+      animation: none !important;
+      transition: none !important;
+    }
+  }
+</style>
+<style>body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+</head>
+<body>
+
+<div class="page">
+  <header class="masthead">
+    <p class="eyebrow">Integration requirements &middot; Asoar &rarr; agent platform</p>
+    <h1>Agent Platform API Requirements</h1>
+    <p class="lede">
+      Asoar workflows run agents that live in the agent platform service. This is what the platform has to
+      expose for that to work: the design-time catalog the workflow designer reads, the execution API the Go
+      engine calls at runtime, and the semantics both sides depend on for reproducible, exactly-once,
+      cancellable agent calls.
+    </p>
+    <dl class="meta">
+      <div>
+        <dt>Source of truth</dt>
+        <dd>api/openapi.yaml</dd>
+      </div>
+      <div>
+        <dt>Spec version</dt>
+        <dd>0.2.0-draft</dd>
+      </div>
+      <div>
+        <dt>Schema dialect</dt>
+        <dd>JSON Schema 2020-12</dd>
+      </div>
+      <div>
+        <dt>Reference impl</dt>
+        <dd>mock/ + client/ (Go)</dd>
+      </div>
+    </dl>
+  </header>
+
+  <div class="layout">
+    <nav class="toc" aria-label="Contents">
+      <h2>Contents</h2>
+      <ol>
+        <li><a href="#scope">Scope</a></li>
+        <li><a href="#conventions">Conventions</a></li>
+        <li><a href="#design-time">Design-time API</a></li>
+        <li><a href="#runtime">Runtime API</a></li>
+        <li><a href="#contract">Version contract</a></li>
+        <li><a href="#errors">Error model</a></li>
+        <li><a href="#idempotency">Idempotency</a></li>
+        <li><a href="#flows">Sequence flows</a></li>
+        <li><a href="#open">Open questions</a></li>
+      </ol>
+    </nav>
+
+    <main>
+      <section id="scope">
+        <h2 class="section-title"><span class="num">01</span> Scope</h2>
+        <h3>One caller, two phases</h3>
+        <p>
+          The Asoar backend is the only client of this API. The browser-based workflow designer never calls the
+          platform directly, so platform credentials stay server-side and tenant scoping and catalog caching
+          happen in one place. Every call carries a service credential plus the tenant the work belongs to.
+        </p>
+        <p>
+          <strong>Design time</strong> is the workflow author browsing agents, reading an agent version's
+          contract, and running sample executions from the designer. <strong>Runtime</strong> is the Go engine
+          executing a published workflow: one agent node becomes one execution on the platform, run by a queue
+          worker that may be restarted, retried, or cancelled at any moment.
+        </p>
+
+        <dl class="glance">
+          <div>
+            <dt>Immutable versions</dt>
+            <dd>Workflows pin <code>agent_id@version</code>. A published version's prompt, model, and schemas never change.</dd>
+          </div>
+          <div>
+            <dt>Contract digest</dt>
+            <dd>One hash over the schemas and limits lets Asoar detect drift before it publishes a workflow.</dd>
+          </div>
+          <div>
+            <dt>Hybrid sync and async</dt>
+            <dd><code>Prefer: wait=N</code> returns the result inline when it is fast, and a 202 to poll when it is not.</dd>
+          </div>
+          <div>
+            <dt>Replay-safe writes</dt>
+            <dd>A redelivered queue job must never produce a second execution or a second bill.</dd>
+          </div>
+          <div>
+            <dt>Explicit retryability</dt>
+            <dd>Every error says whether retrying can help. Callers never infer it from the status code.</dd>
+          </div>
+          <div>
+            <dt>Throttling signal</dt>
+            <dd>Rate-limit headers on every response let Asoar pace its own job queue.</dd>
+          </div>
+        </dl>
+
+        <h4>Not required for the first version</h4>
+        <ul>
+          <li>Completion webhooks. Asoar polls first; <code>callback_url</code> is reserved in the request body.</li>
+          <li>A batch execution endpoint for loop fan-out.</li>
+          <li>Tools that call back into Asoar integrations.</li>
+        </ul>
+      </section>
+
+      <section id="conventions">
+        <h2 class="section-title"><span class="num">02</span> Conventions</h2>
+        <h3>What holds for every endpoint</h3>
+
+        <div class="req">
+          <span class="id">R1</span>
+          <div>
+            <p><span class="must">Every request carries <code>X-Tenant-ID</code></span>, and the platform scopes visibility to that tenant.</p>
+            <p>Agents, versions, and executions a tenant may not see are <strong>404, never 403</strong>, so the API does not leak the existence of another tenant's agents.</p>
+          </div>
+        </div>
+
+        <div class="req">
+          <span class="id">R2</span>
+          <div>
+            <p><span class="must">Responses may grow; requests may not.</span></p>
+            <p>The platform may add response fields and new error codes at any time, and Asoar ignores what it does not know. Request bodies are closed: an unknown field is <code>400 REQUEST_INVALID</code>, which catches typos in generated callers rather than silently dropping them.</p>
+          </div>
+        </div>
+
+        <div class="req">
+          <span class="id">R3</span>
+          <div>
+            <p><span class="must">Every response, including errors, carries <code>RateLimit-Limit</code>, <code>RateLimit-Remaining</code>, and <code>RateLimit-Reset</code></span> (reset in seconds).</p>
+            <p>Asoar reads these on execution calls to pace its queue before it starts getting 429s.</p>
+          </div>
+        </div>
+
+        <p>
+          Everything is JSON over HTTPS under a versioned base path such as <code>/v1</code>. Authentication today is a
+          bearer service token; whether that becomes OAuth client credentials or a scoped API key, and how the tenant
+          model maps between the two services, is <a href="#open">open</a>.
+        </p>
+      </section>
+
+      <section id="design-time">
+        <h2 class="section-title"><span class="num">03</span> Design-time API</h2>
+        <h3>The catalog the designer reads</h3>
+        <p>
+          These endpoints back the designer's agent palette, the inline preview, the About tab, and the Test tab.
+          They are also what the publish validator calls to verify a workflow before freezing it.
+        </p>
+
+        <div class="endpoints">
+          <div class="ep">
+            <span class="method">GET</span>
+            <span class="path">/agents</span>
+            <p class="note">Lightweight palette list. No schemas in the response.</p>
+          </div>
+          <div class="ep">
+            <span class="method">GET</span>
+            <span class="path">/agents/{agent_id}</span>
+            <p class="note">Agent metadata for one agent.</p>
+          </div>
+          <div class="ep">
+            <span class="method">GET</span>
+            <span class="path">/agents/{agent_id}/versions</span>
+            <p class="note">Every version in every status, newest first. Drives the "update available" badge.</p>
+          </div>
+          <div class="ep">
+            <span class="method">GET</span>
+            <span class="path">/agents/{agent_id}/versions/{version}</span>
+            <p class="note">The full contract: input schema, output schema, limits, digest, model. The source of truth at publish.</p>
+          </div>
+          <div class="ep">
+            <span class="method post">POST</span>
+            <span class="path">/agents/{agent_id}/versions/{version}/validate</span>
+            <p class="note">Check an input against the input schema without executing.</p>
+          </div>
+          <div class="ep">
+            <span class="method post">POST</span>
+            <span class="path">/agents/{agent_id}/versions/{version}/test</span>
+            <p class="note">Sample run from the designer, flagged so it stays out of production metrics.</p>
+          </div>
+        </div>
+
+        <h4>Listing and filtering</h4>
+        <div class="scroller">
+          <table>
+            <thead>
+              <tr><th>Parameter</th><th>Behaviour</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="code">search</td>
+                <td>Case-insensitive substring match on <code>agent_id</code>, <code>name</code>, or <code>description</code>.</td>
+              </tr>
+              <tr>
+                <td class="code">tags</td>
+                <td>Comma-separated. Keeps agents carrying <em>every</em> listed tag.</td>
+              </tr>
+              <tr>
+                <td class="code">status</td>
+                <td><code>published</code> (default) or <code>deprecated</code>. Keeps agents with at least one version in that status.</td>
+              </tr>
+              <tr>
+                <td class="code">cursor, limit</td>
+                <td>Opaque cursor; limit 1&ndash;200, default 50. <code>next_cursor</code> is null on the last page. Order must be stable across pages.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="req">
+          <span class="id">R4</span>
+          <div>
+            <p><code>latest_version</code> <span class="must">is the highest version whose status is <code>published</code></span>, or <code>null</code> when the agent has none.</p>
+            <p>The designer pins exactly this version when an author drops an agent on the canvas, so it must never point at a deprecated or disabled version.</p>
+          </div>
+        </div>
+
+        <div class="req">
+          <span class="id">R5</span>
+          <div>
+            <p><span class="must">Invalid input to <code>/validate</code> is a 200 with <code>valid: false</code></span>, not an error response.</p>
+            <p>Each entry in <code>errors</code> carries a JSON Pointer into the input, such as <code>/alert/source</code>, so the designer can mark the offending field.</p>
+          </div>
+        </div>
+
+        <div class="req">
+          <span class="id">R6</span>
+          <div>
+            <p><span class="must"><code>/test</code> behaves exactly like creating an execution</span>, with four differences: the execution is flagged <code>is_test</code> and excluded from production metrics, there is no idempotency key and no replay, there is no workflow <code>context</code>, and <code>timeout_ms</code> defaults to the version's <code>default_timeout_ms</code>.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="runtime">
+        <h2 class="section-title"><span class="num">04</span> Runtime API</h2>
+        <h3>One agent node, one execution</h3>
+
+        <div class="endpoints">
+          <div class="ep">
+            <span class="method post">POST</span>
+            <span class="path">/executions</span>
+            <p class="note">Start an execution, or replay the one already recorded for this idempotency key.</p>
+          </div>
+          <div class="ep">
+            <span class="method">GET</span>
+            <span class="path">/executions/{execution_id}</span>
+            <p class="note">Status and result. The polling endpoint.</p>
+          </div>
+          <div class="ep">
+            <span class="method post">POST</span>
+            <span class="path">/executions/{execution_id}/cancel</span>
+            <p class="note">Called when an Asoar run is cancelled or its deadline expires.</p>
+          </div>
+          <div class="ep">
+            <span class="method">GET</span>
+            <span class="path">/executions/{execution_id}/trace</span>
+            <p class="note">Intermediate steps for the runs view. Optional for the first version.</p>
+          </div>
+        </div>
+
+        <h4>Request body</h4>
+        <div class="scroller">
+          <table>
+            <thead>
+              <tr><th>Field</th><th>Required</th><th>Meaning</th></tr>
+            </thead>
+            <tbody>
+              <tr><td class="code">agent_id</td><td><span class="chip neutral">yes</span></td><td>The pinned agent.</td></tr>
+              <tr><td class="code">agent_version</td><td><span class="chip neutral">yes</span></td><td>The pinned version. Integer, at least 1.</td></tr>
+              <tr><td class="code">input</td><td><span class="chip neutral">yes</span></td><td>Must conform to that version's <code>input_schema</code>.</td></tr>
+              <tr><td class="code">context</td><td><span class="chip neutral">yes</span></td><td><code>workflow_id</code>, <code>run_id</code>, <code>node_path</code>, and optional <code>attempt</code>. Echo it into traces and billing records so a cost can be traced back to a workflow run.</td></tr>
+              <tr><td class="code">timeout_ms</td><td><span class="chip neutral">yes</span></td><td>Per attempt, measured from execution creation. Above <code>max_timeout_ms</code> is a 400.</td></tr>
+              <tr><td class="code">callback_url</td><td><em>no</em></td><td>Reserved for the planned completion webhook.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="req">
+          <span class="id">R7</span>
+          <div>
+            <p><span class="must">Honour <code>Prefer: wait=N</code></span>: hold the request open up to N seconds for a terminal state, then answer 200 with the execution. If it is still running, answer 202 with the <code>execution_id</code> and a <code>Location</code> header.</p>
+            <p>Parse it as RFC 7240, so <code>respond-async, wait=20</code> works and unknown preferences are ignored. Without <code>wait</code> the platform does not block. The server may cap N and reports what it applied in <code>Preference-Applied</code>.</p>
+          </div>
+        </div>
+
+        <h4>Order of checks</h4>
+        <p>Each of these refuses the request before an execution exists, which matters because a rejected request leaves the idempotency key free for a retry.</p>
+        <ol class="rules">
+          <li>Auth and tenant &mdash; <code>401</code>, <code>403</code>, or <code>400</code> for a missing tenant header.</li>
+          <li>Missing or oversized <code>Idempotency-Key</code>, or a malformed body &mdash; <code>400 REQUEST_INVALID</code>.</li>
+          <li>Idempotent replay &mdash; see <a href="#idempotency">section 7</a>. Checked before the version exists, so a replay still works after a version is disabled.</li>
+          <li>Unknown or invisible version &mdash; <code>404</code>. Disabled version &mdash; <code>409</code>. Deprecated versions still execute.</li>
+          <li><code>timeout_ms</code> above <code>max_timeout_ms</code> &mdash; <code>400</code> with a <code>details</code> entry for <code>/timeout_ms</code>.</li>
+          <li>Input that fails the input schema &mdash; <code>400 INPUT_SCHEMA_INVALID</code> with per-field <code>details</code>.</li>
+          <li>Admission refused &mdash; <code>429</code> or <code>503</code> with <code>retry_after_ms</code>.</li>
+        </ol>
+
+        <div class="req">
+          <span class="id">R8</span>
+          <div>
+            <p><span class="must">When <code>timeout_ms</code> elapses, the execution fails with <code>TIMEOUT</code> and <code>retryable: true</code></span>, and the platform stops billing work for it.</p>
+          </div>
+        </div>
+
+        <div class="req">
+          <span class="id">R9</span>
+          <div>
+            <p><span class="must">Cancel is idempotent.</span> A queued or running execution moves to <code>cancelled</code>; a terminal one comes back unchanged. A cancelled execution has no <code>error</code>.</p>
+            <p>Asoar calls this when a run is cancelled and when its own deadline expires, so it may arrive at any point, including for an execution that just finished.</p>
+          </div>
+        </div>
+
+        <div class="req">
+          <span class="id">R10</span>
+          <div>
+            <p><span class="must">The platform guarantees <code>output</code> conforms to the version's <code>output_schema</code></span> for a succeeded execution, using structured output plus an internal repair loop.</p>
+            <p>Asoar re-validates as defence in depth and treats a violation as a non-retryable node failure, so a schema break surfaces as a workflow error rather than corrupt downstream bindings.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="contract">
+        <h2 class="section-title"><span class="num">05</span> Version contract</h2>
+        <h3>What a pinned version promises</h3>
+        <p>
+          <code>GET /agents/{id}/versions/{v}</code> returns the contract that Asoar snapshots into the workflow node
+          and re-verifies at publish. Its shape is fixed by
+          <code>schemas/agent-version-contract.schema.json</code> in the contract repo.
+        </p>
+
+        <div class="scroller">
+          <table>
+            <thead>
+              <tr><th>Field</th><th>Notes</th></tr>
+            </thead>
+            <tbody>
+              <tr><td class="code">agent_id, version, name</td><td>Identity. <code>description</code>, <code>tags</code>, and <code>owner</code> are optional and shown in the designer.</td></tr>
+              <tr><td class="code">status</td><td><code>published</code>, <code>deprecated</code>, or <code>disabled</code>.</td></tr>
+              <tr><td class="code">deprecation</td><td>Optional <code>since</code>, <code>replacement_version</code>, and <code>message</code>, shown when an author opens a deprecated pin.</td></tr>
+              <tr><td class="code">input_schema, output_schema</td><td>JSON Schema 2020-12, the same dialect Asoar uses for its own action schemas so one binding and validation path serves both.</td></tr>
+              <tr><td class="code">limits</td><td><code>default_timeout_ms</code>, <code>max_timeout_ms</code>, and optional <code>recommended_max_attempts</code>. The designer pre-fills execution settings from these and rejects anything above the max.</td></tr>
+              <tr><td class="code">model</td><td>Provider, name, temperature, max tokens. Read-only in the designer and deliberately excluded from the digest.</td></tr>
+              <tr><td class="code">digest, published_at</td><td>See below.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="req">
+          <span class="id">R11</span>
+          <div>
+            <p><span class="must">A published version is immutable.</span> Any change to prompt, model, temperature, or either schema creates a new version.</p>
+            <p>This is what makes a workflow run reproducible: a published Asoar workflow keeps calling the exact version it was published against, and upgrading is an explicit author action.</p>
+          </div>
+        </div>
+
+        <div class="req">
+          <span class="id">R12</span>
+          <div>
+            <p><span class="must"><code>digest</code> is <code>sha256:</code> followed by the lowercase hex SHA-256 of the RFC 8785 canonical JSON of <code>{input_schema, output_schema, limits}</code></span>, computed over the JSON exactly as served.</p>
+            <p>Model details are excluded on purpose, so the digest tracks only what callers bind against. Asoar stores it in the node and compares it at publish; a mismatch blocks the publish rather than silently breaking bindings.</p>
+          </div>
+        </div>
+
+        <h4>Status lifecycle</h4>
+        <div class="scroller">
+          <table>
+            <thead>
+              <tr><th>Status</th><th>Executes</th><th>Effect in Asoar</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="code">published</td>
+                <td><span class="chip yes">yes</span></td>
+                <td>Pinnable. The only status a workflow can be published against.</td>
+              </tr>
+              <tr>
+                <td class="code">deprecated</td>
+                <td><span class="chip yes">yes</span></td>
+                <td>Existing runs keep working. The designer warns and blocks new pins.</td>
+              </tr>
+              <tr>
+                <td class="code">disabled</td>
+                <td><span class="chip no">no</span></td>
+                <td>Executions rejected with <code>409 AGENT_VERSION_DISABLED</code>, a non-retryable node failure.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="errors">
+        <h2 class="section-title"><span class="num">06</span> Error model</h2>
+        <h3>Two channels, one retry decision</h3>
+        <p>
+          A <strong>request-level rejection</strong> means no execution was created: a non-2xx status carrying
+          <code>{"error": {...}}</code>, and the idempotency key stays free. An <strong>execution-level failure</strong>
+          means the execution exists and reached <code>status: failed</code>: HTTP 200 carrying the execution with its
+          <code>error</code> set. A failed execution is never an error response, including when it fails inside the
+          <code>Prefer: wait</code> window.
+        </p>
+
+        <div class="req">
+          <span class="id">R13</span>
+          <div>
+            <p><span class="must">Every error carries <code>code</code>, <code>message</code>, and an explicit <code>retryable</code> boolean.</span></p>
+            <p>Asoar decides retries from the flag alone. Retryable failures consume a node attempt and get the backoff; non-retryable ones skip the remaining attempts and go straight to the node's on-error behaviour, because a schema error fails identically every time and would just burn attempts.</p>
+          </div>
+        </div>
+
+        <div class="scroller">
+          <table>
+            <thead>
+              <tr>
+                <th>Code</th>
+                <th class="num">Request</th>
+                <th>On a failed execution</th>
+                <th>Retryable</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td class="code">REQUEST_INVALID</td><td class="num">400</td><td><span class="chip neutral">no</span></td><td><span class="chip no">no</span></td></tr>
+              <tr><td class="code">INPUT_SCHEMA_INVALID</td><td class="num">400</td><td><span class="chip neutral">no</span></td><td><span class="chip no">no</span></td></tr>
+              <tr><td class="code">UNAUTHORIZED</td><td class="num">401</td><td><span class="chip neutral">no</span></td><td><span class="chip no">no</span></td></tr>
+              <tr><td class="code">FORBIDDEN</td><td class="num">403</td><td><span class="chip neutral">no</span></td><td><span class="chip no">no</span></td></tr>
+              <tr><td class="code">AGENT_NOT_FOUND</td><td class="num">404</td><td><span class="chip neutral">no</span></td><td><span class="chip no">no</span></td></tr>
+              <tr><td class="code">AGENT_VERSION_NOT_FOUND</td><td class="num">404</td><td><span class="chip neutral">no</span></td><td><span class="chip no">no</span></td></tr>
+              <tr><td class="code">EXECUTION_NOT_FOUND</td><td class="num">404</td><td><span class="chip neutral">no</span></td><td><span class="chip no">no</span></td></tr>
+              <tr><td class="code">AGENT_VERSION_DISABLED</td><td class="num">409</td><td><span class="chip neutral">no</span></td><td><span class="chip no">no</span></td></tr>
+              <tr><td class="code">IDEMPOTENCY_KEY_REUSED</td><td class="num">409</td><td><span class="chip neutral">no</span></td><td><span class="chip no">no</span></td></tr>
+              <tr><td class="code">QUOTA_EXCEEDED</td><td class="num">429</td><td><span class="chip neutral">no</span></td><td><span class="chip yes">yes</span></td></tr>
+              <tr><td class="code">PROVIDER_RATE_LIMITED</td><td class="num">429</td><td><span class="chip yes">yes</span></td><td><span class="chip yes">yes</span></td></tr>
+              <tr><td class="code">PROVIDER_UNAVAILABLE</td><td class="num">503</td><td><span class="chip yes">yes</span></td><td><span class="chip yes">yes</span></td></tr>
+              <tr><td class="code">INTERNAL</td><td class="num">500</td><td><span class="chip yes">yes</span></td><td><span class="chip yes">yes</span></td></tr>
+              <tr><td class="code">TIMEOUT</td><td class="num"><em>none</em></td><td><span class="chip yes">yes</span></td><td><span class="chip yes">yes</span></td></tr>
+              <tr><td class="code">OUTPUT_SCHEMA_VIOLATION</td><td class="num"><em>none</em></td><td><span class="chip yes">yes</span></td><td><span class="chip no">no</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="req">
+          <span class="id">R14</span>
+          <div>
+            <p>Retryable errors <span class="must">carry <code>retry_after_ms</code></span>, which is authoritative. The <code>Retry-After</code> header, rounded up to whole seconds, is for intermediaries.</p>
+            <p><code>QUOTA_EXCEEDED</code> covers both the tenant's quota and the advertised request rate limit. Because the platform absorbs transient provider errors internally, a <code>PROVIDER_*</code> failure that reaches Asoar is terminal for that execution.</p>
+          </div>
+        </div>
+
+        <p>
+          Validation errors carry <code>details</code>: a list of <code>{path, message}</code> where <code>path</code> is a JSON
+          Pointer into the input for schema errors, or into the request body for everything else.
+        </p>
+      </section>
+
+      <section id="idempotency">
+        <h2 class="section-title"><span class="num">07</span> Idempotency</h2>
+        <h3>The requirement that carries the most weight</h3>
+        <p>
+          Asoar's engine runs on a durable job queue. A worker can die mid-execution and the job will be redelivered;
+          that redelivery must not start a second LLM run or produce a second bill. Asoar builds the key from
+          <code>run_id + node_path + attempt</code>, so a redelivery reuses the key while a deliberate retry
+          increments <code>attempt</code> and therefore gets a fresh one.
+        </p>
+
+        <div class="req">
+          <span class="id">R15</span>
+          <div>
+            <p><span class="must"><code>Idempotency-Key</code> is required on every <code>POST /executions</code></span> and is scoped to the tenant.</p>
+          </div>
+        </div>
+
+        <div class="req">
+          <span class="id">R16</span>
+          <div>
+            <p><span class="must">A repeat of the same key with the same JSON body returns the recorded execution in its current state and starts nothing.</span></p>
+            <p>Bodies are compared as JSON values after RFC 8785 canonicalization, so key order and whitespace do not matter. The replay honours <code>Prefer: wait</code> again, which is what lets a redelivered job simply wait for the original execution to finish.</p>
+          </div>
+        </div>
+
+        <div class="req">
+          <span class="id">R17</span>
+          <div>
+            <p><span class="must">The same key with a different body is <code>409 IDEMPOTENCY_KEY_REUSED</code>.</span></p>
+            <p>That is a bug signal, not a retry: it means two different node inputs collided on one key.</p>
+          </div>
+        </div>
+
+        <div class="req">
+          <span class="id">R18</span>
+          <div>
+            <p><span class="must">Keys are retained for at least 24 hours</span> after the execution is created, and a request-level rejection does not record the key.</p>
+            <p>The retention window is a proposal &mdash; confirm what the platform can actually hold, since it bounds how long a queue job may be delayed and still be replay-safe.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="flows">
+        <h2 class="section-title"><span class="num">08</span> Sequence flows</h2>
+        <h3>How the two phases actually run</h3>
+
+        <figure>
+          <div class="plate">
+            <pre class="mermaid">
+sequenceDiagram
+    autonumber
+    actor Author as Workflow author
+    participant D as Asoar designer
+    participant B as Asoar backend
+    participant P as Agent platform
+
+    Author->>D: Open the Agents palette
+    D->>B: GET /api/agents
+    B->>P: GET /agents?status=published
+    Note over B,P: Service credential plus X-Tenant-ID.<br/>Backend caches the catalog for a short TTL.
+    P-->>B: 200 items with agent_id, name, tags, latest_version
+    B-->>D: Palette rows
+
+    Author->>D: Expand the preview for alert-triage
+    D->>B: GET /api/agents/alert-triage/versions/3
+    B->>P: GET /agents/alert-triage/versions/3
+    P-->>B: 200 input_schema, output_schema, limits, digest, model
+    B-->>D: Contract
+
+    Author->>D: Drop the agent on the canvas
+    Note over D: Pin alert-triage v3, store the snapshot and digest,<br/>prefill timeout and retries from limits
+
+    Author->>D: Run a sample from the Test tab
+    D->>B: POST /api/agents/alert-triage/versions/3/test
+    B->>P: POST /agents/alert-triage/versions/3/test with Prefer wait=20
+    alt Finishes inside the wait window
+        P-->>B: 200 succeeded with output, usage, latency_ms
+    else Still running
+        P-->>B: 202 execution_id
+        B->>P: GET /executions/exec_01
+        P-->>B: 200 succeeded
+    end
+    B-->>D: Output, usage, latency
+
+    Author->>D: Publish the workflow
+    D->>B: Publish request
+    loop Every agent node in the workflow
+        B->>P: GET /agents/alert-triage/versions/3
+        P-->>B: 200 contract
+        Note over B: Re-verify status is published, digest matches,<br/>timeout fits max_timeout_ms, bindings still type-check
+    end
+    B-->>Author: workflow_version 7 published and frozen
+            </pre>
+          </div>
+          <figcaption>
+            <strong>Workflow creation.</strong> The designer only ever talks to the Asoar backend. Notice the last
+            loop: the draft's stored snapshot is never trusted at publish, so the platform is re-read as the source of
+            truth and a drifted digest blocks the publish.
+          </figcaption>
+        </figure>
+
+        <figure>
+          <div class="plate">
+            <pre class="mermaid">
+sequenceDiagram
+    autonumber
+    participant Q as Queue worker
+    participant C as Platform client
+    participant P as Agent platform
+
+    Note over Q: Resolve bindings from upstream nodes.<br/>Idempotency-Key is run_id + node_path + attempt
+    Q->>C: Execute agent node, attempt 1
+    C->>P: POST /executions with Prefer wait=20 and Idempotency-Key r1/triage/1
+
+    alt Terminal inside the wait window
+        P-->>C: 200 succeeded with output, usage, trace_id
+    else Still running
+        P-->>C: 202 execution_id and Location
+        loop Snooze the job, then poll
+            C->>P: GET /executions/exec_01
+            P-->>C: 200 status running
+        end
+        C->>P: GET /executions/exec_01
+        P-->>C: 200 status succeeded
+    end
+    C-->>Q: Execution result
+    Note over Q: Re-validate output against output_schema,<br/>checkpoint the node result by node_path,<br/>journal execution_id, trace_id and usage
+
+    alt Worker crashed before the result was stored
+        Q->>C: Queue redelivers the same job
+        C->>P: POST /executions with the same key and body
+        P-->>C: 200 the recorded execution, nothing new started
+    end
+
+    alt Failure with retryable true
+        P-->>C: 200 failed, PROVIDER_UNAVAILABLE, retry_after_ms
+        Note over Q: Retry as attempt 2, which forms a new key
+    else Failure with retryable false
+        P-->>C: 200 failed, OUTPUT_SCHEMA_VIOLATION
+        Note over Q: Skip remaining attempts, apply the node on-error rule
+    end
+
+    alt Run cancelled or the Asoar deadline expires
+        Q->>C: Cancel
+        C->>P: POST /executions/exec_01/cancel
+        P-->>C: 202 status cancelled
+    end
+            </pre>
+          </div>
+          <figcaption>
+            <strong>Workflow execution.</strong> Retries live in the queue worker, never in the client, so attempts are
+            not multiplied across layers. The redelivery branch is the reason the idempotency key exists: the same key
+            and body must yield exactly one platform execution.
+          </figcaption>
+        </figure>
+      </section>
+
+      <section id="open">
+        <h2 class="section-title"><span class="num">09</span> Open questions</h2>
+        <h3>What we need from the platform team</h3>
+        <p>
+          These block or reshape parts of the contract above. The first one gates everything else, since this spec was
+          written from Asoar's requirements rather than from the platform's current routes.
+        </p>
+
+        <div class="questions">
+          <div>
+            <span class="tag">Q1 &middot; gating</span>
+            <p>Which of these endpoints exist today, and where does the real shape differ from this document?</p>
+          </div>
+          <div>
+            <span class="tag">Q2 &middot; auth</span>
+            <p>OAuth client credentials or a scoped API key? And how does the tenant model map between the two services &mdash; is <code>X-Tenant-ID</code> trusted from the caller, or derived from the credential?</p>
+          </div>
+          <div>
+            <span class="tag">Q3 &middot; idempotency</span>
+            <p>How long can recorded keys actually be retained (R18 proposes 24 hours)?</p>
+          </div>
+          <div>
+            <span class="tag">Q4 &middot; webhooks</span>
+            <p>When can <code>execution.succeeded/failed/cancelled</code> and version lifecycle events land? Catalog cache invalidation and parking long executions both depend on them.</p>
+          </div>
+          <div>
+            <span class="tag">Q5 &middot; batch</span>
+            <p>Is a batch execution endpoint needed for loop fan-out over many items, or is per-item execution acceptable?</p>
+          </div>
+          <div>
+            <span class="tag">Q6 &middot; tools</span>
+            <p>If agents can call tools that reach external systems, do those use the platform's own connectors, or call back into Asoar integrations?</p>
+          </div>
+          <div>
+            <span class="tag">Q7 &middot; billing</span>
+            <p><code>cost_usd</code> is currently a float. Integer micro-USD would avoid rounding drift in per-run cost rollups &mdash; worth changing before anyone depends on it.</p>
+          </div>
+          <div>
+            <span class="tag">Q8 &middot; limits</span>
+            <p>What are the real rate limits and quota units per tenant, and which <code>RateLimit</code> header draft should we standardise on?</p>
+          </div>
+        </div>
+
+        <h4>Acceptance</h4>
+        <p>
+          The contract repo ships a mock platform and a Go client that implement this document. A platform build is
+          conformant when the same integration suite passes against it: sync success, slow success followed by polling,
+          retryable and non-retryable failures, a timeout, a cancellation, a redelivered request producing exactly one
+          execution, and a reused key with a changed body returning 409.
+        </p>
+      </section>
+    </main>
+  </div>
+
+  <footer>
+    <p>
+      Generated from api/openapi.yaml 0.2.0-draft in the agent-platform-contracts repo, which is the source of truth.
+      Where this page and the spec disagree, the spec wins.
+    </p>
+  </footer>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/11.15.0/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, securityLevel: "strict" });</script>
+</body>
+</html>

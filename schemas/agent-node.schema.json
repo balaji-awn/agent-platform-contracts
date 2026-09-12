@@ -1,0 +1,214 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:asoar:schema:node:agent:v1",
+  "title": "Asoar agent node",
+  "description": "A workflow node that executes a pinned agent version on the agent platform. Cross-object rules (timeout vs contract limits, error edges, binding types) are enforced by the publish validator, not by this schema.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "type", "config", "bindings", "execution_policy"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,63}$",
+      "description": "Unique within the workflow. Used in node_path and in binding refs."
+    },
+    "type": { "const": "agent" },
+    "label": { "type": "string", "maxLength": 120 },
+    "position": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y"],
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" }
+      }
+    },
+    "config": { "$ref": "#/$defs/AgentConfig" },
+    "bindings": {
+      "type": "object",
+      "description": "Keyed by top-level input field name from the input schema.",
+      "additionalProperties": { "$ref": "#/$defs/Binding" }
+    },
+    "execution_policy": { "$ref": "#/$defs/ExecutionPolicy" }
+  },
+  "$defs": {
+    "AgentConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["agent_id", "agent_version", "contract_digest", "contract_snapshot"],
+      "properties": {
+        "agent_id": { "type": "string", "minLength": 1 },
+        "agent_version": { "type": "integer", "minimum": 1 },
+        "contract_digest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$",
+          "description": "Must equal the platform's digest for agent_id@agent_version at publish time."
+        },
+        "contract_snapshot": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["input_schema", "output_schema", "limits"],
+          "description": "Copied from the agent version contract when the node is dropped or upgraded. Lets the designer render and validate offline.",
+          "properties": {
+            "input_schema": { "type": "object" },
+            "output_schema": { "type": "object" },
+            "limits": { "$ref": "#/$defs/ContractLimits" }
+          }
+        }
+      }
+    },
+    "ContractLimits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["default_timeout_ms", "max_timeout_ms"],
+      "properties": {
+        "default_timeout_ms": { "type": "integer", "minimum": 1000 },
+        "max_timeout_ms": { "type": "integer", "minimum": 1000 },
+        "recommended_max_attempts": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "Binding": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ref"],
+          "properties": {
+            "ref": {
+              "type": "string",
+              "description": "Reference to an upstream node's output or error, e.g. $nodes.fetch_alert.output.alert",
+              "pattern": "^\\$nodes\\.[a-z][a-z0-9_]*\\.(output|error)(\\.[A-Za-z0-9_]+|\\[[0-9]+\\])*$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["literal"],
+          "properties": {
+            "literal": {}
+          }
+        }
+      ]
+    },
+    "ExecutionPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["timeout_ms", "max_attempts", "backoff", "on_error"],
+      "properties": {
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1000,
+          "description": "Per attempt. Sent to the platform in the execution request. Must be <= contract_snapshot.limits.max_timeout_ms."
+        },
+        "max_attempts": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10,
+          "description": "Total attempts including the first. Only errors with retryable=true consume further attempts."
+        },
+        "backoff": { "$ref": "#/$defs/Backoff" },
+        "on_error": {
+          "enum": ["fail", "continue", "route"],
+          "description": "fail: run fails. continue: node output is null and the run proceeds. route: the workflow must contain an edge from this node with sourceHandle 'error'; error-branch nodes can bind $nodes.<id>.error."
+        }
+      }
+    },
+    "Backoff": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "initial_ms", "max_ms"],
+          "properties": {
+            "type": { "const": "exponential" },
+            "initial_ms": { "type": "integer", "minimum": 100 },
+            "max_ms": { "type": "integer", "minimum": 100 },
+            "multiplier": { "type": "number", "minimum": 1, "default": 2 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "delay_ms"],
+          "properties": {
+            "type": { "const": "fixed" },
+            "delay_ms": { "type": "integer", "minimum": 100 }
+          }
+        }
+      ]
+    },
+    "NodeError": {
+      "title": "Agent node error output",
+      "description": "Shape exposed as $nodes.<id>.error to nodes on the error branch when on_error is 'route'.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message", "retryable", "attempts"],
+      "properties": {
+        "code": {
+          "type": "string",
+          "examples": [
+            "INPUT_SCHEMA_INVALID",
+            "OUTPUT_SCHEMA_VIOLATION",
+            "TIMEOUT",
+            "PROVIDER_RATE_LIMITED",
+            "PROVIDER_UNAVAILABLE",
+            "AGENT_VERSION_DISABLED"
+          ]
+        },
+        "message": { "type": "string" },
+        "retryable": { "type": "boolean" },
+        "attempts": { "type": "integer", "minimum": 1 },
+        "execution_id": { "type": "string" },
+        "trace_id": { "type": "string" }
+      }
+    }
+  },
+  "examples": [
+    {
+      "id": "triage_agent",
+      "type": "agent",
+      "label": "Alert triage",
+      "position": { "x": 320, "y": 180 },
+      "config": {
+        "agent_id": "alert-triage",
+        "agent_version": 3,
+        "contract_digest": "sha256:9c1e5f0a7b3d2e4f6a8b0c1d3e5f7a9b1c3d5e7f9a0b2c4d6e8f0a1b3c5d7e9f",
+        "contract_snapshot": {
+          "input_schema": {
+            "type": "object",
+            "required": ["alert"],
+            "properties": {
+              "alert": { "type": "object" },
+              "tenant_policy": { "type": "string", "enum": ["strict", "lenient"] }
+            }
+          },
+          "output_schema": {
+            "type": "object",
+            "required": ["severity", "verdict"],
+            "properties": {
+              "severity": { "enum": ["low", "medium", "high", "critical"] },
+              "verdict": { "enum": ["benign", "suspicious", "malicious"] },
+              "reasoning": { "type": "string" }
+            }
+          },
+          "limits": {
+            "default_timeout_ms": 60000,
+            "max_timeout_ms": 120000,
+            "recommended_max_attempts": 2
+          }
+        }
+      },
+      "bindings": {
+        "alert": { "ref": "$nodes.fetch_alert.output.alert" },
+        "tenant_policy": { "literal": "strict" }
+      },
+      "execution_policy": {
+        "timeout_ms": 90000,
+        "max_attempts": 2,
+        "backoff": { "type": "exponential", "initial_ms": 2000, "max_ms": 30000 },
+        "on_error": "route"
+      }
+    }
+  ]
+}

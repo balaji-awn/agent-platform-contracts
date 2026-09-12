@@ -1,0 +1,9 @@
+# Go
+/bin/
+*.test
+coverage.out
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store

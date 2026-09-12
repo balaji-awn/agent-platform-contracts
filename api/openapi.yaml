@@ -1,0 +1,675 @@
+openapi: 3.1.0
+jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
+info:
+  title: Agent Platform API
+  version: 0.2.0-draft
+  description: |
+    API that Asoar consumes to discover agents at design time and execute them at runtime.
+    Design decisions and rationale: docs/design/agent-nodes.md.
+
+    Conventions:
+    - Every request carries `X-Tenant-ID`. Agents are visible only to tenants allowed to use them.
+      An agent or execution the tenant cannot see returns 404, never 403.
+    - Published agent versions are immutable.
+    - Errors use the `ErrorEnvelope` shape with an explicit `retryable` flag. The `Error` schema lists
+      every code, its HTTP status, and whether it is a request-level or execution-level failure.
+    - Every response, including errors, carries `RateLimit-Limit`, `RateLimit-Remaining`, and
+      `RateLimit-Reset` so callers can throttle.
+    - Compatibility: response objects may gain fields, and `Error.code` may gain values. Clients must
+      ignore unknown fields and handle unknown codes by their `retryable` flag. Request bodies marked
+      `additionalProperties: false` reject unknown fields.
+
+    Failure channels:
+    - Request-level rejection: the request is refused before an execution exists. The response is a
+      non-2xx status with an `ErrorEnvelope`. No execution is created and an `Idempotency-Key` is not
+      recorded, so the same key may be sent again.
+    - Execution-level failure: the execution exists and reached `status: failed`. It is returned as an
+      `Execution` with `error` set, with HTTP 200 from createExecution, testAgentVersion, or
+      getExecution. It is never an error response.
+servers:
+  - url: https://agent-platform.internal/v1
+    description: Placeholder
+security:
+  - serviceAuth: []
+
+tags:
+  - name: Agents
+    description: Design-time discovery and contracts
+  - name: Executions
+    description: Runtime execution
+
+paths:
+  /agents:
+    get:
+      tags: [Agents]
+      operationId: listAgents
+      summary: List agents visible to the tenant
+      description: Lightweight list for the designer palette, in a stable order. Does not include schemas.
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - name: search
+          in: query
+          description: Case-insensitive substring match on agent_id, name, or description.
+          schema: { type: string }
+        - name: tags
+          in: query
+          description: Only agents that have every listed tag.
+          style: form
+          explode: false
+          schema:
+            type: array
+            items: { type: string }
+        - name: status
+          in: query
+          description: Only agents with at least one version in this status.
+          schema:
+            type: string
+            enum: [published, deprecated]
+            default: published
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { $ref: '#/components/responses/AgentList' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /agents/{agent_id}:
+    get:
+      tags: [Agents]
+      operationId: getAgent
+      summary: Get agent metadata
+      description: Unknown or invisible agents return 404 AGENT_NOT_FOUND.
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/AgentId'
+      responses:
+        '200': { $ref: '#/components/responses/Agent' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /agents/{agent_id}/versions:
+    get:
+      tags: [Agents]
+      operationId: listAgentVersions
+      summary: List versions of an agent
+      description: Every version in every status, newest first. Unknown or invisible agents return 404 AGENT_NOT_FOUND.
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/AgentId'
+      responses:
+        '200': { $ref: '#/components/responses/AgentVersionList' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /agents/{agent_id}/versions/{version}:
+    get:
+      tags: [Agents]
+      operationId: getAgentVersion
+      summary: Get the full contract of an agent version
+      description: |
+        Source of truth for input and output schemas, limits, and digest. Asoar re-fetches this at
+        workflow publish. Returned in every status. Unknown or invisible agents or versions return
+        404 AGENT_VERSION_NOT_FOUND.
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/AgentId'
+        - $ref: '#/components/parameters/Version'
+      responses:
+        '200': { $ref: '#/components/responses/AgentVersionContract' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /agents/{agent_id}/versions/{version}/validate:
+    post:
+      tags: [Agents]
+      operationId: validateAgentInput
+      summary: Validate an input against the version's input schema without executing
+      description: Works for a version in any status.
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/AgentId'
+        - $ref: '#/components/parameters/Version'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [input]
+              properties:
+                input: {}
+      responses:
+        '200': { $ref: '#/components/responses/ValidationResult' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /agents/{agent_id}/versions/{version}/test:
+    post:
+      tags: [Agents]
+      operationId: testAgentVersion
+      summary: Run a test execution from the designer
+      description: |
+        Same behavior as createExecution, including the order of checks and the failure channels,
+        except that the execution is flagged `is_test` and excluded from production metrics, there is
+        no `Idempotency-Key` and no replay, there is no `context`, and `timeout_ms` defaults to the
+        version's `default_timeout_ms`. Poll the returned execution with getExecution.
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/AgentId'
+        - $ref: '#/components/parameters/Version'
+        - $ref: '#/components/parameters/PreferWait'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [input]
+              properties:
+                input: {}
+                timeout_ms: { type: integer, minimum: 1000 }
+      responses:
+        '200': { $ref: '#/components/responses/ExecutionFinished' }
+        '202': { $ref: '#/components/responses/ExecutionAccepted' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /executions:
+    post:
+      tags: [Executions]
+      operationId: createExecution
+      summary: Start an agent execution
+      description: |
+        Hybrid sync/async. The server waits up to the `Prefer: wait` window for the execution to reach
+        a terminal state (succeeded, failed, or cancelled). If it does, the response is 200 with the
+        execution, whatever its status: a failed execution is a 200 with `status: failed` and `error`
+        set. Otherwise the response is 202 and the caller polls getExecution.
+
+        Checks run in this order. Each failure is a request-level rejection:
+        1. Auth and tenant: 401 UNAUTHORIZED, 403 FORBIDDEN, 400 REQUEST_INVALID for a missing tenant.
+        2. Missing or invalid `Idempotency-Key`, or a malformed body: 400 REQUEST_INVALID.
+        3. Idempotent replay (below).
+        4. Unknown or invisible agent version: 404 AGENT_VERSION_NOT_FOUND. Disabled version:
+           409 AGENT_VERSION_DISABLED. Deprecated versions still execute.
+        5. `timeout_ms` above the version's `max_timeout_ms`: 400 REQUEST_INVALID with a `details`
+           entry for `/timeout_ms`.
+        6. Input that fails the input schema: 400 INPUT_SCHEMA_INVALID with `details`.
+        7. Admission refused: 429 QUOTA_EXCEEDED or PROVIDER_RATE_LIMITED, or 503 PROVIDER_UNAVAILABLE,
+           each with `retry_after_ms`.
+
+        Idempotency: keys are scoped to the tenant and retained for at least 24 hours after the
+        execution is created. A request whose key matches a recorded execution is a replay. If its body
+        is the same JSON value as the original (compared after RFC 8785 canonicalization, so key order
+        and whitespace do not matter), the server starts nothing and returns the recorded execution in
+        its current state, honoring `Prefer: wait` again. This holds even if the version has since been
+        disabled. The same key with a different body returns 409 IDEMPOTENCY_KEY_REUSED. Asoar uses
+        `run_id + node_path + attempt` as the key.
+
+        Timeout: `timeout_ms` runs from execution creation. When it elapses, the execution fails with
+        TIMEOUT, which is retryable.
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/PreferWait'
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 512 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ExecutionRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/ExecutionFinished' }
+        '202': { $ref: '#/components/responses/ExecutionAccepted' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /executions/{execution_id}:
+    get:
+      tags: [Executions]
+      operationId: getExecution
+      summary: Get execution status and result
+      description: A failed execution is a 200 with `status: failed`. Unknown or invisible executions return 404 EXECUTION_NOT_FOUND.
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/ExecutionId'
+      responses:
+        '200': { $ref: '#/components/responses/ExecutionState' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /executions/{execution_id}/cancel:
+    post:
+      tags: [Executions]
+      operationId: cancelExecution
+      summary: Cancel an execution
+      description: |
+        Idempotent. A queued or running execution moves to `cancelled`. The returned execution may still
+        show `running` while cancellation completes, so poll getExecution for the terminal state.
+        Cancelling a terminal execution returns it unchanged. A cancelled execution has no `error`.
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/ExecutionId'
+      responses:
+        '202': { $ref: '#/components/responses/ExecutionState' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /executions/{execution_id}/trace:
+    get:
+      tags: [Executions]
+      operationId: getExecutionTrace
+      summary: Get intermediate steps of an execution
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/ExecutionId'
+      responses:
+        '200': { $ref: '#/components/responses/ExecutionTrace' }
+        default: { $ref: '#/components/responses/Error' }
+
+webhooks:
+  executionFinished:
+    post:
+      summary: Planned. Sent to the request's callback_url when an execution reaches a terminal state.
+      description: Not required for the first version; Asoar polls. Receivers must treat delivery as at-least-once.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [event, execution]
+              properties:
+                event:
+                  type: string
+                  enum: [execution.succeeded, execution.failed, execution.cancelled]
+                execution: { $ref: '#/components/schemas/Execution' }
+      responses:
+        '204':
+          description: Received
+
+components:
+  securitySchemes:
+    serviceAuth:
+      type: http
+      scheme: bearer
+      description: Service-to-service token. OAuth client credentials vs scoped API key is an open question.
+
+  parameters:
+    TenantId:
+      name: X-Tenant-ID
+      in: header
+      required: true
+      schema: { type: string, minLength: 1 }
+    AgentId:
+      name: agent_id
+      in: path
+      required: true
+      schema: { type: string, minLength: 1 }
+    Version:
+      name: version
+      in: path
+      required: true
+      description: A value that is not a positive integer returns 400 REQUEST_INVALID.
+      schema: { type: integer, minimum: 1 }
+    ExecutionId:
+      name: execution_id
+      in: path
+      required: true
+      schema: { type: string, minLength: 1 }
+    Cursor:
+      name: cursor
+      in: query
+      description: Opaque `next_cursor` from a previous page. An invalid cursor returns 400 REQUEST_INVALID.
+      schema: { type: string }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+    PreferWait:
+      name: Prefer
+      in: header
+      description: |
+        RFC 7240 preferences. The server honors `wait=N`: hold the request open up to N seconds for a
+        terminal result. Other preferences are ignored, and a `wait` value that is not a non-negative
+        integer is ignored. Without `wait` the server does not wait: it returns 200 only if the
+        execution is already terminal, otherwise 202. The server may cap N; the applied value is
+        echoed in `Preference-Applied`.
+      schema:
+        type: string
+        examples: ['wait=20', 'respond-async, wait=20']
+
+  headers:
+    RateLimitLimit:
+      description: Requests allowed in the current window.
+      schema: { type: integer }
+    RateLimitRemaining:
+      description: Requests left in the current window.
+      schema: { type: integer }
+    RateLimitReset:
+      description: Seconds until the window resets.
+      schema: { type: integer }
+    RetryAfter:
+      description: |
+        Whole seconds, rounded up from `retry_after_ms`. Sent with request-level rejections that set
+        `retry_after_ms`. The body field is authoritative; the header serves intermediaries and generic
+        HTTP clients.
+      schema: { type: integer }
+    PreferenceApplied:
+      description: Present when the request asked for `wait`. `wait=N`, where N is the whole seconds the server waited at most, after capping.
+      schema: { type: string, examples: ['wait=20'] }
+
+  responses:
+    AgentList:
+      description: Page of agents
+      headers:
+        RateLimit-Limit: { $ref: '#/components/headers/RateLimitLimit' }
+        RateLimit-Remaining: { $ref: '#/components/headers/RateLimitRemaining' }
+        RateLimit-Reset: { $ref: '#/components/headers/RateLimitReset' }
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [items]
+            properties:
+              items:
+                type: array
+                items: { $ref: '#/components/schemas/AgentSummary' }
+              next_cursor:
+                type: [string, 'null']
+                description: Null on the last page.
+    Agent:
+      description: Agent metadata
+      headers:
+        RateLimit-Limit: { $ref: '#/components/headers/RateLimitLimit' }
+        RateLimit-Remaining: { $ref: '#/components/headers/RateLimitRemaining' }
+        RateLimit-Reset: { $ref: '#/components/headers/RateLimitReset' }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/AgentSummary' }
+    AgentVersionList:
+      description: Versions, newest first
+      headers:
+        RateLimit-Limit: { $ref: '#/components/headers/RateLimitLimit' }
+        RateLimit-Remaining: { $ref: '#/components/headers/RateLimitRemaining' }
+        RateLimit-Reset: { $ref: '#/components/headers/RateLimitReset' }
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [items]
+            properties:
+              items:
+                type: array
+                items: { $ref: '#/components/schemas/AgentVersionSummary' }
+    AgentVersionContract:
+      description: Agent version contract
+      headers:
+        RateLimit-Limit: { $ref: '#/components/headers/RateLimitLimit' }
+        RateLimit-Remaining: { $ref: '#/components/headers/RateLimitRemaining' }
+        RateLimit-Reset: { $ref: '#/components/headers/RateLimitReset' }
+      content:
+        application/json:
+          schema: { $ref: '../schemas/agent-version-contract.schema.json' }
+    ValidationResult:
+      description: Validation result. Invalid input is a 200 with valid=false, not an error.
+      headers:
+        RateLimit-Limit: { $ref: '#/components/headers/RateLimitLimit' }
+        RateLimit-Remaining: { $ref: '#/components/headers/RateLimitRemaining' }
+        RateLimit-Reset: { $ref: '#/components/headers/RateLimitReset' }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ValidationResult' }
+    ExecutionFinished:
+      description: |
+        Execution reached a terminal state (succeeded, failed, or cancelled) within the wait window, or
+        an idempotent replay of a terminal execution.
+      headers:
+        RateLimit-Limit: { $ref: '#/components/headers/RateLimitLimit' }
+        RateLimit-Remaining: { $ref: '#/components/headers/RateLimitRemaining' }
+        RateLimit-Reset: { $ref: '#/components/headers/RateLimitReset' }
+        Preference-Applied: { $ref: '#/components/headers/PreferenceApplied' }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Execution' }
+    ExecutionAccepted:
+      description: Execution is still queued or running. Poll getExecution.
+      headers:
+        RateLimit-Limit: { $ref: '#/components/headers/RateLimitLimit' }
+        RateLimit-Remaining: { $ref: '#/components/headers/RateLimitRemaining' }
+        RateLimit-Reset: { $ref: '#/components/headers/RateLimitReset' }
+        Preference-Applied: { $ref: '#/components/headers/PreferenceApplied' }
+        Location:
+          description: URI reference to the execution resource. Resolve it against the request URL.
+          schema: { type: string }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Execution' }
+    ExecutionState:
+      description: Current execution state
+      headers:
+        RateLimit-Limit: { $ref: '#/components/headers/RateLimitLimit' }
+        RateLimit-Remaining: { $ref: '#/components/headers/RateLimitRemaining' }
+        RateLimit-Reset: { $ref: '#/components/headers/RateLimitReset' }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Execution' }
+    ExecutionTrace:
+      description: Execution trace
+      headers:
+        RateLimit-Limit: { $ref: '#/components/headers/RateLimitLimit' }
+        RateLimit-Remaining: { $ref: '#/components/headers/RateLimitRemaining' }
+        RateLimit-Reset: { $ref: '#/components/headers/RateLimitReset' }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ExecutionTrace' }
+    Error:
+      description: Request-level rejection. The status for each code is listed in the `Error` schema.
+      headers:
+        RateLimit-Limit: { $ref: '#/components/headers/RateLimitLimit' }
+        RateLimit-Remaining: { $ref: '#/components/headers/RateLimitRemaining' }
+        RateLimit-Reset: { $ref: '#/components/headers/RateLimitReset' }
+        Retry-After: { $ref: '#/components/headers/RetryAfter' }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+
+  schemas:
+    AgentSummary:
+      type: object
+      description: name, description, tags, and owner come from the agent's highest version.
+      required: [agent_id, name, latest_version]
+      properties:
+        agent_id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+        owner: { type: string }
+        latest_version:
+          type: [integer, 'null']
+          minimum: 1
+          description: Highest version with status `published`, or null if the agent has none. The designer pins this version on drop.
+
+    AgentVersionSummary:
+      type: object
+      required: [version, status, digest, published_at]
+      properties:
+        version: { type: integer, minimum: 1 }
+        status:
+          type: string
+          enum: [published, deprecated, disabled]
+        digest: { type: string, pattern: '^sha256:[a-f0-9]{64}$' }
+        published_at: { type: string, format: date-time }
+
+    ValidationResult:
+      type: object
+      required: [valid]
+      properties:
+        valid: { type: boolean }
+        errors:
+          type: array
+          items: { $ref: '#/components/schemas/FieldError' }
+
+    FieldError:
+      type: object
+      required: [path, message]
+      properties:
+        path:
+          type: string
+          description: JSON Pointer. For input errors (INPUT_SCHEMA_INVALID and ValidationResult) it points into the input, e.g. /alert/source; for other request errors it points into the request body, e.g. /timeout_ms.
+        message: { type: string }
+
+    ExecutionRequest:
+      type: object
+      required: [agent_id, agent_version, input, context, timeout_ms]
+      additionalProperties: false
+      properties:
+        agent_id: { type: string }
+        agent_version: { type: integer, minimum: 1 }
+        input:
+          description: Must conform to the version's input_schema.
+        context: { $ref: '#/components/schemas/ExecutionContext' }
+        timeout_ms:
+          type: integer
+          minimum: 1000
+          description: Per attempt, measured from execution creation. Must not exceed the version's max_timeout_ms (else 400 REQUEST_INVALID).
+        callback_url:
+          type: string
+          format: uri
+          description: Planned. Receives the executionFinished webhook.
+
+    ExecutionContext:
+      type: object
+      required: [workflow_id, run_id, node_path]
+      additionalProperties: false
+      properties:
+        workflow_id:
+          type: string
+          description: Workflow id@version, e.g. wf_phishing@7.
+        run_id: { type: string }
+        node_path: { type: string }
+        attempt: { type: integer, minimum: 1 }
+
+    Execution:
+      type: object
+      required: [execution_id, status, agent_id, agent_version, created_at]
+      properties:
+        execution_id: { type: string }
+        status:
+          type: string
+          enum: [queued, running, succeeded, failed, cancelled]
+        agent_id: { type: string }
+        agent_version: { type: integer }
+        is_test: { type: boolean, default: false }
+        output:
+          description: Present when status is succeeded. Conforms to the version's output_schema, and may be null only if that schema allows it.
+        error:
+          $ref: '#/components/schemas/Error'
+          description: Present when status is failed. Absent for cancelled executions.
+        usage: { $ref: '#/components/schemas/Usage' }
+        model:
+          type: object
+          properties:
+            provider: { type: string }
+            name: { type: string }
+        latency_ms:
+          type: integer
+          description: Present once the execution is terminal.
+        trace_id: { type: string }
+        created_at: { type: string, format: date-time }
+        finished_at: { type: [string, 'null'], format: date-time }
+      allOf:
+        - if:
+            required: [status]
+            properties: { status: { const: succeeded } }
+          then:
+            required: [output]
+        - if:
+            required: [status]
+            properties: { status: { const: failed } }
+          then:
+            required: [error]
+
+    Usage:
+      type: object
+      properties:
+        input_tokens: { type: integer }
+        output_tokens: { type: integer }
+        cost_usd: { type: number }
+
+    ExecutionTrace:
+      type: object
+      required: [execution_id, steps]
+      properties:
+        execution_id: { type: string }
+        steps:
+          type: array
+          items:
+            type: object
+            required: [type, started_at]
+            properties:
+              type:
+                type: string
+                examples: [model_call, tool_call, output_repair]
+              started_at: { type: string, format: date-time }
+              ended_at: { type: string, format: date-time }
+              summary: { type: string }
+
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error: { $ref: '#/components/schemas/Error' }
+
+    Error:
+      type: object
+      description: |
+        Every code, how it is delivered, and its default `retryable` value. "Request" gives the HTTP
+        status of a request-level rejection; "execution" means the code can appear in `Execution.error`.
+        Servers set `retryable` per response, and callers decide from the flag, not from this table.
+
+        | code | request | execution | retryable |
+        |---|---|---|---|
+        | REQUEST_INVALID | 400 | no | false |
+        | INPUT_SCHEMA_INVALID | 400 | no | false |
+        | UNAUTHORIZED | 401 | no | false |
+        | FORBIDDEN | 403 | no | false |
+        | AGENT_NOT_FOUND | 404 | no | false |
+        | AGENT_VERSION_NOT_FOUND | 404 | no | false |
+        | EXECUTION_NOT_FOUND | 404 | no | false |
+        | AGENT_VERSION_DISABLED | 409 | no | false |
+        | IDEMPOTENCY_KEY_REUSED | 409 | no | false |
+        | QUOTA_EXCEEDED | 429 | no | true |
+        | PROVIDER_RATE_LIMITED | 429 | yes | true |
+        | PROVIDER_UNAVAILABLE | 503 | yes | true |
+        | INTERNAL | 500 | yes | true |
+        | TIMEOUT | none | yes | true |
+        | OUTPUT_SCHEMA_VIOLATION | none | yes | false |
+
+        QUOTA_EXCEEDED covers both the tenant's quota and the request rate limit advertised in the
+        `RateLimit-*` headers. The platform retries transient provider errors internally, so
+        PROVIDER_* failures are terminal for that execution.
+      required: [code, message, retryable]
+      properties:
+        code:
+          type: string
+          enum:
+            - REQUEST_INVALID
+            - INPUT_SCHEMA_INVALID
+            - OUTPUT_SCHEMA_VIOLATION
+            - AGENT_NOT_FOUND
+            - AGENT_VERSION_NOT_FOUND
+            - AGENT_VERSION_DISABLED
+            - EXECUTION_NOT_FOUND
+            - IDEMPOTENCY_KEY_REUSED
+            - TIMEOUT
+            - PROVIDER_RATE_LIMITED
+            - PROVIDER_UNAVAILABLE
+            - QUOTA_EXCEEDED
+            - UNAUTHORIZED
+            - FORBIDDEN
+            - INTERNAL
+        message: { type: string }
+        retryable:
+          type: boolean
+          description: Callers decide retries from this flag, not from the code.
+        retry_after_ms:
+          type: integer
+          minimum: 0
+          description: Minimum wait before retrying. Authoritative over the Retry-After header.
+        details:
+          type: array
+          items: { $ref: '#/components/schemas/FieldError' }
