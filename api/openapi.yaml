@@ -223,7 +223,9 @@ paths:
       tags: [Executions]
       operationId: getExecution
       summary: Get execution status and result
-      description: A failed execution is a 200 with `status: failed`. Unknown or invisible executions return 404 EXECUTION_NOT_FOUND.
+      description: |
+        A failed execution is a 200 with `status: failed`. Unknown or invisible executions return
+        404 EXECUTION_NOT_FOUND.
       parameters:
         - $ref: '#/components/parameters/TenantId'
         - $ref: '#/components/parameters/ExecutionId'

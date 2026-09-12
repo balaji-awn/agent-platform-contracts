@@ -11,6 +11,7 @@ The contract between **Asoar** (workflow engine) and the **agent platform** serv
 | `schemas/agent-node.schema.json` | Agent node as stored in Asoar workflow JSON | Draft |
 | `schemas/agent-version-contract.schema.json` | Platform response for one agent version | Draft |
 | `api/openapi.yaml` | Platform API that Asoar consumes (OpenAPI 3.1) | Draft |
+| `api/asoar-designer-api.yaml` | Asoar backend endpoints the designer calls for agents (Step 3). Implemented in the Asoar repo; specified here because it proxies the platform API | Draft |
 | `platform/` | Go wire types for the API and the contract digest, shared by the client and the mock | Done |
 | `mock/` | Mock platform server for integration tests, scriptable from Go (Step 1) | Done |
 | `client/` | Go client that Asoar imports (Step 2) | Done |
