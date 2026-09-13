@@ -143,6 +143,94 @@ func TestContractTypesMatchSchema(t *testing.T) {
 	}
 }
 
+// specComponent returns the top-level property names and required list of a component in an OpenAPI
+// file. It scans indentation rather than parsing YAML, which keeps this package dependency-free.
+func specComponent(t *testing.T, path, component string) (props, required []string) {
+	t.Helper()
+	lines := strings.Split(readFile(t, path), "\n")
+	// components.responses can hold an entry of the same name, so scan only the schemas section.
+	schemas := slices.Index(lines, "  schemas:")
+	if schemas < 0 {
+		t.Fatalf("%s has no components.schemas section", path)
+	}
+	start := -1
+	for i, line := range lines[schemas:] {
+		if line == "    "+component+":" {
+			start = schemas + i + 1
+			break
+		}
+	}
+	if start < 0 {
+		t.Fatalf("%s defines no schema component %s", path, component)
+	}
+	inProps := false
+	for _, line := range lines[start:] {
+		trimmed := strings.TrimSpace(line)
+		switch {
+		case trimmed == "":
+			continue
+		case !strings.HasPrefix(line, "     "): // dedented out of the component
+			return props, required
+		case strings.HasPrefix(line, "      ") && !strings.HasPrefix(line, "       "): // a key of the component
+			inProps = trimmed == "properties:"
+			if list, ok := strings.CutPrefix(trimmed, "required: ["); ok && required == nil {
+				for _, name := range strings.Split(strings.TrimSuffix(list, "]"), ",") {
+					required = append(required, strings.TrimSpace(name))
+				}
+			}
+		case inProps && strings.HasPrefix(line, "        ") && !strings.HasPrefix(line, "         "):
+			if name, _, ok := strings.Cut(trimmed, ":"); ok {
+				props = append(props, name)
+			}
+		}
+	}
+	return props, required
+}
+
+// The contract schema is inlined into both specs so they render in OpenAPI viewers, which do not
+// resolve external file references. This fails if a copy drifts from the canonical JSON Schema.
+func TestContractSchemaInlinedInSpecs(t *testing.T) {
+	var schema map[string]any
+	if err := json.Unmarshal([]byte(readFile(t, "../schemas/agent-version-contract.schema.json")), &schema); err != nil {
+		t.Fatal(err)
+	}
+	wantProps := schemaProps(t, schema)
+	var wantRequired []string
+	for _, name := range schema["required"].([]any) {
+		wantRequired = append(wantRequired, name.(string))
+	}
+	slices.Sort(wantRequired)
+
+	for _, path := range []string{"../api/openapi.yaml", "../api/asoar-designer-api.yaml"} {
+		props, required := specComponent(t, path, "AgentVersionContract")
+		slices.Sort(props)
+		slices.Sort(required)
+		if !slices.Equal(props, wantProps) {
+			t.Errorf("%s AgentVersionContract properties %v, schema has %v", path, props, wantProps)
+		}
+		if !slices.Equal(required, wantRequired) {
+			t.Errorf("%s AgentVersionContract required %v, schema has %v", path, required, wantRequired)
+		}
+	}
+}
+
+// Viewers such as Swagger UI do not fetch external files, so neither spec may reference one.
+func TestSpecsHaveNoExternalRefs(t *testing.T) {
+	for _, path := range []string{"../api/openapi.yaml", "../api/asoar-designer-api.yaml"} {
+		for i, line := range strings.Split(readFile(t, path), "\n") {
+			ref := strings.Index(line, "$ref:")
+			if ref < 0 {
+				continue
+			}
+			target := strings.TrimSpace(line[ref+len("$ref:"):])
+			target = strings.Trim(target, "'\"}, ")
+			if !strings.HasPrefix(target, "#/") {
+				t.Errorf("%s:%d references %s outside the document", path, i+1, target)
+			}
+		}
+	}
+}
+
 func TestServedContractValidatesAgainstSchema(t *testing.T) {
 	s := New(Options{})
 	defer s.Close()

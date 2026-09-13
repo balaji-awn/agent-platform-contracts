@@ -39,6 +39,7 @@ Run the tests with `go test -race ./...`.
 
 ## Rules for changing contracts
 
-- JSON Schema 2020-12 everywhere; OpenAPI 3.1 references the schema files by relative path.
+- JSON Schema 2020-12 everywhere; OpenAPI 3.1 for the specs.
+- Both specs are self-contained: no `$ref` leaves the document. OpenAPI viewers such as Swagger UI do not fetch external files, so the agent version contract is inlined as an `AgentVersionContract` component in each spec. `schemas/agent-version-contract.schema.json` stays the canonical JSON Schema for code, and `mock/spec_test.go` fails if a copy drifts from it.
 - Published contracts change additively only. Removing or renaming a field is a new major version.
 - Change the schema or spec first, then the mock and client, in the same PR. `mock/spec_test.go` fails when routes, error codes, or contract fields drift from the spec.

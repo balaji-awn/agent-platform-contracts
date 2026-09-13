@@ -403,7 +403,7 @@ components:
         RateLimit-Reset: { $ref: '#/components/headers/RateLimitReset' }
       content:
         application/json:
-          schema: { $ref: '../schemas/agent-version-contract.schema.json' }
+          schema: { $ref: '#/components/schemas/AgentVersionContract' }
     ValidationResult:
       description: Validation result. Invalid input is a 200 with valid=false, not an error.
       headers:
@@ -468,6 +468,71 @@ components:
           schema: { $ref: '#/components/schemas/ErrorEnvelope' }
 
   schemas:
+    AgentVersionContract:
+      type: object
+      title: Agent version contract
+      description: |
+        Response body of getAgentVersion. Published versions are immutable. This is a response schema,
+        so objects are open: the platform may add fields, and clients must ignore unknown ones.
+
+        Mirrors schemas/agent-version-contract.schema.json, the canonical JSON Schema used by code that
+        validates stored workflow nodes. It is inlined here rather than referenced so the spec renders
+        in any OpenAPI viewer; mock/spec_test.go fails if the two ever drift apart.
+      required: [agent_id, version, name, status, input_schema, output_schema, limits, digest, published_at]
+      properties:
+        agent_id: { type: string, minLength: 1 }
+        version: { type: integer, minimum: 1 }
+        name: { type: string, maxLength: 120 }
+        description: { type: string, maxLength: 2000 }
+        tags:
+          type: array
+          uniqueItems: true
+          items: { type: string }
+        owner:
+          type: string
+          description: Team or user that maintains the agent.
+        status:
+          type: string
+          enum: [published, deprecated, disabled]
+          description: |
+            `deprecated` still executes; the designer warns and blocks new pins.
+            `disabled` rejects executions with AGENT_VERSION_DISABLED.
+        deprecation:
+          type: object
+          properties:
+            since: { type: string, format: date-time }
+            replacement_version: { type: integer, minimum: 1 }
+            message: { type: string }
+        input_schema:
+          type: object
+          description: JSON Schema (2020-12) for the execution request's input.
+        output_schema:
+          type: object
+          description: JSON Schema (2020-12) the platform guarantees the output conforms to.
+        limits:
+          type: object
+          description: default_timeout_ms must not exceed max_timeout_ms.
+          required: [default_timeout_ms, max_timeout_ms]
+          properties:
+            default_timeout_ms: { type: integer, minimum: 1000 }
+            max_timeout_ms: { type: integer, minimum: 1000 }
+            recommended_max_attempts: { type: integer, minimum: 1 }
+        model:
+          type: object
+          description: Informational only. Shown read-only in the designer's About tab.
+          properties:
+            provider: { type: string }
+            name: { type: string }
+            temperature: { type: number, minimum: 0 }
+            max_tokens: { type: integer, minimum: 1 }
+        digest:
+          type: string
+          pattern: '^sha256:[a-f0-9]{64}$'
+          description: |
+            sha256 over the RFC 8785 canonical JSON of {input_schema, output_schema, limits}. Model
+            details are excluded so the digest tracks only what callers depend on.
+        published_at: { type: string, format: date-time }
+
     AgentSummary:
       type: object
       description: name, description, tags, and owner come from the agent's highest version.

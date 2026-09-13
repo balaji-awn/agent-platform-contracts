@@ -105,7 +105,7 @@ paths:
                 properties:
                   items:
                     type: array
-                    items: { $ref: 'openapi.yaml#/components/schemas/AgentSummary' }
+                    items: { $ref: '#/components/schemas/AgentSummary' }
                   next_cursor:
                     type: [string, 'null']
                     description: Null on the last page.
@@ -135,7 +135,7 @@ paths:
                 properties:
                   items:
                     type: array
-                    items: { $ref: 'openapi.yaml#/components/schemas/AgentVersionSummary' }
+                    items: { $ref: '#/components/schemas/AgentVersionSummary' }
         default: { $ref: '#/components/responses/Error' }
 
   /agents/{agent_id}/versions/{version}:
@@ -155,7 +155,7 @@ paths:
           description: Agent version contract
           content:
             application/json:
-              schema: { $ref: '../schemas/agent-version-contract.schema.json' }
+              schema: { $ref: '#/components/schemas/AgentVersionContract' }
         default: { $ref: '#/components/responses/Error' }
 
   /agents/{agent_id}/versions/{version}/test:
@@ -291,6 +291,116 @@ components:
           schema: { $ref: '#/components/schemas/ErrorEnvelope' }
 
   schemas:
+    # The schemas below mirror api/openapi.yaml, because the backend passes these shapes through from
+    # the platform. They are inlined rather than referenced across files so this spec renders standalone
+    # in OpenAPI viewers. mock/spec_test.go checks the contract copy against the canonical JSON Schema.
+
+    AgentSummary:
+      type: object
+      description: name, description, tags, and owner come from the agent's highest version.
+      required: [agent_id, name, latest_version]
+      properties:
+        agent_id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+        owner: { type: string }
+        latest_version:
+          type: [integer, 'null']
+          minimum: 1
+          description: Highest version with status published, or null if the agent has none.
+
+    AgentVersionSummary:
+      type: object
+      required: [version, status, digest, published_at]
+      properties:
+        version: { type: integer, minimum: 1 }
+        status:
+          type: string
+          enum: [published, deprecated, disabled]
+        digest: { type: string, pattern: '^sha256:[a-f0-9]{64}$' }
+        published_at: { type: string, format: date-time }
+
+    AgentVersionContract:
+      type: object
+      title: Agent version contract
+      description: |
+        The platform's contract for one agent version, passed through unchanged. Mirrors
+        schemas/agent-version-contract.schema.json and the component of the same name in
+        api/openapi.yaml.
+      required: [agent_id, version, name, status, input_schema, output_schema, limits, digest, published_at]
+      properties:
+        agent_id: { type: string, minLength: 1 }
+        version: { type: integer, minimum: 1 }
+        name: { type: string, maxLength: 120 }
+        description: { type: string, maxLength: 2000 }
+        tags:
+          type: array
+          uniqueItems: true
+          items: { type: string }
+        owner:
+          type: string
+          description: Team or user that maintains the agent.
+        status:
+          type: string
+          enum: [published, deprecated, disabled]
+          description: |
+            `deprecated` still executes; the designer warns and blocks new pins.
+            `disabled` rejects executions with AGENT_VERSION_DISABLED.
+        deprecation:
+          type: object
+          properties:
+            since: { type: string, format: date-time }
+            replacement_version: { type: integer, minimum: 1 }
+            message: { type: string }
+        input_schema:
+          type: object
+          description: JSON Schema (2020-12) for the execution request's input. The Test tab renders its fields.
+        output_schema:
+          type: object
+          description: JSON Schema (2020-12) the platform guarantees the output conforms to.
+        limits:
+          type: object
+          description: default_timeout_ms must not exceed max_timeout_ms. The Settings tab pre-fills from these.
+          required: [default_timeout_ms, max_timeout_ms]
+          properties:
+            default_timeout_ms: { type: integer, minimum: 1000 }
+            max_timeout_ms: { type: integer, minimum: 1000 }
+            recommended_max_attempts: { type: integer, minimum: 1 }
+        model:
+          type: object
+          description: Informational only. Shown read-only in the About tab.
+          properties:
+            provider: { type: string }
+            name: { type: string }
+            temperature: { type: number, minimum: 0 }
+            max_tokens: { type: integer, minimum: 1 }
+        digest:
+          type: string
+          pattern: '^sha256:[a-f0-9]{64}$'
+          description: |
+            sha256 over the RFC 8785 canonical JSON of {input_schema, output_schema, limits}. The designer
+            stores it on the node so publish can detect drift.
+        published_at: { type: string, format: date-time }
+
+    Usage:
+      type: object
+      properties:
+        input_tokens: { type: integer }
+        output_tokens: { type: integer }
+        cost_usd: { type: number }
+
+    FieldError:
+      type: object
+      required: [path, message]
+      properties:
+        path:
+          type: string
+          description: JSON Pointer into the input, e.g. /alert/source.
+        message: { type: string }
+
     TestRun:
       type: object
       description: |
@@ -309,7 +419,7 @@ components:
         error:
           $ref: '#/components/schemas/Error'
           description: Present when status is failed. This is the agent run failing, not the request failing.
-        usage: { $ref: 'openapi.yaml#/components/schemas/Usage' }
+        usage: { $ref: '#/components/schemas/Usage' }
         latency_ms:
           type: integer
           description: Present once the run is terminal.
@@ -392,4 +502,4 @@ components:
         details:
           type: array
           description: Field-level problems, for marking inputs in the Test tab.
-          items: { $ref: 'openapi.yaml#/components/schemas/FieldError' }
+          items: { $ref: '#/components/schemas/FieldError' }
