@@ -55,7 +55,6 @@ Let Asoar workflows use agents built in the separate **agent platform service**.
 - `GET /agents/{id}`: agent metadata.
 - `GET /agents/{id}/versions`: version list with status.
 - `GET /agents/{id}/versions/{v}`: the full contract. Schema is in `agent-version-contract.schema.json`.
-- `POST /agents/{id}/versions/{v}/validate`: validate an input without executing.
 - `POST /agents/{id}/versions/{v}/test`: sample run, flagged as a test so it's excluded from production metrics.
 
 **Runtime:**
@@ -113,6 +112,7 @@ Let Asoar workflows use agents built in the separate **agent platform service**.
 | Trusting the draft's contract snapshot at publish | The snapshot can be stale. The platform is the source of truth. |
 | Retrying all errors | Schema errors fail identically every time and just burn attempts. |
 | Webhook-first async | Deferred, not rejected. Polling via River snooze is simpler to ship first. |
+| A separate `/validate` endpoint | No caller. The designer validates locally from the contract snapshot, and both test and execute already reject bad input with `INPUT_SCHEMA_INVALID` before any model call, so a pre-flight check costs a round trip and saves nothing. Revisit if platform-side admission ever grows beyond schema checks. |
 
 ## Constraints
 

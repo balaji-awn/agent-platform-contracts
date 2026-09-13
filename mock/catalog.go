@@ -303,21 +303,3 @@ func (s *Server) getAgentVersion(w http.ResponseWriter, r *http.Request, tenant 
 		writeJSON(w, http.StatusOK, v.AgentVersionContract)
 	}
 }
-
-func (s *Server) validateAgentInput(w http.ResponseWriter, r *http.Request, tenant string) {
-	v := s.versionFromPath(w, r, tenant)
-	if v == nil {
-		return
-	}
-	var body platform.ValidateRequest
-	if rej, ok := decodeBody(r, &body, false, "input"); !ok {
-		writeError(w, rej)
-		return
-	}
-	errs, err := s.opts.Validator.ValidateInput(v.InputSchema, body.Input)
-	if err != nil {
-		writeError(w, errorFor(platform.CodeInternal, "validator: "+err.Error()))
-		return
-	}
-	writeJSON(w, http.StatusOK, platform.ValidationResult{Valid: len(errs) == 0, Errors: errs})
-}

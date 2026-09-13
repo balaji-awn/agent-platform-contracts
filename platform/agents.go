@@ -102,17 +102,6 @@ type Model struct {
 	MaxTokens   int      `json:"max_tokens,omitempty"`
 }
 
-// ValidateRequest is the body of validateAgentInput.
-type ValidateRequest struct {
-	Input json.RawMessage `json:"input"`
-}
-
-// ValidationResult is the body returned by validateAgentInput.
-type ValidationResult struct {
-	Valid  bool         `json:"valid"`
-	Errors []FieldError `json:"errors,omitempty"`
-}
-
 // TestRequest is the body of testAgentVersion. TimeoutMs 0 means the version's default timeout.
 type TestRequest struct {
 	Input     json.RawMessage `json:"input"`

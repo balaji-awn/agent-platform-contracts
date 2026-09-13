@@ -109,15 +109,6 @@ func TestCatalog(t *testing.T) {
 		t.Errorf("digest %s, computed %s (%v)", contract.Digest, d, err)
 	}
 
-	res, _, err := tc.ValidateInput(ctx, "alert-triage", 3, json.RawMessage(`{"alert":{}}`))
-	if err != nil || !res.Valid {
-		t.Errorf("ValidateInput(valid) = %+v, %v", res, err)
-	}
-	res, _, err = tc.ValidateInput(ctx, "alert-triage", 3, json.RawMessage(`{}`))
-	if err != nil || res.Valid || len(res.Errors) != 1 || res.Errors[0].Path != "/alert" {
-		t.Errorf("ValidateInput(invalid) = %+v, %v", res, err)
-	}
-
 	_, resp, err = tc.GetAgent(ctx, "no/such agent")
 	e := asError(t, err)
 	if e.StatusCode != 404 || e.Code != platform.CodeAgentNotFound || e.Retryable || resp.StatusCode != 404 {

@@ -45,16 +45,15 @@ type Options struct {
 type Operation string
 
 const (
-	OpListAgents         Operation = "listAgents"
-	OpGetAgent           Operation = "getAgent"
-	OpListAgentVersions  Operation = "listAgentVersions"
-	OpGetAgentVersion    Operation = "getAgentVersion"
-	OpValidateAgentInput Operation = "validateAgentInput"
-	OpTestAgentVersion   Operation = "testAgentVersion"
-	OpCreateExecution    Operation = "createExecution"
-	OpGetExecution       Operation = "getExecution"
-	OpCancelExecution    Operation = "cancelExecution"
-	OpGetExecutionTrace  Operation = "getExecutionTrace"
+	OpListAgents        Operation = "listAgents"
+	OpGetAgent          Operation = "getAgent"
+	OpListAgentVersions Operation = "listAgentVersions"
+	OpGetAgentVersion   Operation = "getAgentVersion"
+	OpTestAgentVersion  Operation = "testAgentVersion"
+	OpCreateExecution   Operation = "createExecution"
+	OpGetExecution      Operation = "getExecution"
+	OpCancelExecution   Operation = "cancelExecution"
+	OpGetExecutionTrace Operation = "getExecutionTrace"
 )
 
 type route struct {
@@ -70,7 +69,6 @@ var routes = []route{
 	{OpGetAgent, http.MethodGet, "/agents/{agent_id}", (*Server).getAgent},
 	{OpListAgentVersions, http.MethodGet, "/agents/{agent_id}/versions", (*Server).listAgentVersions},
 	{OpGetAgentVersion, http.MethodGet, "/agents/{agent_id}/versions/{version}", (*Server).getAgentVersion},
-	{OpValidateAgentInput, http.MethodPost, "/agents/{agent_id}/versions/{version}/validate", (*Server).validateAgentInput},
 	{OpTestAgentVersion, http.MethodPost, "/agents/{agent_id}/versions/{version}/test", (*Server).testAgentVersion},
 	{OpCreateExecution, http.MethodPost, "/executions", (*Server).createExecution},
 	{OpGetExecution, http.MethodGet, "/executions/{execution_id}", (*Server).getExecution},

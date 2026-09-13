@@ -2,7 +2,6 @@ package client
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"net/url"
@@ -61,16 +60,6 @@ func (t *TenantClient) ListAgentVersions(ctx context.Context, agentID string) (*
 // GetAgentVersion returns the full contract of an agent version.
 func (t *TenantClient) GetAgentVersion(ctx context.Context, agentID string, version int) (*platform.AgentVersionContract, *Response, error) {
 	return call[platform.AgentVersionContract](ctx, t, request{method: http.MethodGet, path: versionPath(agentID, version)})
-}
-
-// ValidateInput checks input against the version's input schema without executing. Invalid input is
-// a result with Valid false, not an error.
-func (t *TenantClient) ValidateInput(ctx context.Context, agentID string, version int, input json.RawMessage) (*platform.ValidationResult, *Response, error) {
-	return call[platform.ValidationResult](ctx, t, request{
-		method: http.MethodPost,
-		path:   versionPath(agentID, version) + "/validate",
-		body:   platform.ValidateRequest{Input: input},
-	})
 }
 
 // TestAgentVersion runs a test execution, excluded from production metrics. It waits up to wait

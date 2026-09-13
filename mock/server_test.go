@@ -620,22 +620,6 @@ func TestCatalog(t *testing.T) {
 	wantError(t, resp, body, http.StatusNotFound, platform.CodeAgentVersionNotFound)
 }
 
-func TestValidate(t *testing.T) {
-	h := newHarness(t, mock.Options{})
-	resp, body := h.do(http.MethodPost, "/agents/alert-triage/versions/3/validate", map[string]any{"input": map[string]any{"alert": map[string]any{}}})
-	wantStatus(t, resp, body, http.StatusOK)
-	if r := decode[platform.ValidationResult](t, body); !r.Valid || len(r.Errors) != 0 {
-		t.Errorf("valid input: %s", body)
-	}
-	resp, body = h.do(http.MethodPost, "/agents/alert-triage/versions/3/validate", map[string]any{"input": map[string]any{}})
-	wantStatus(t, resp, body, http.StatusOK)
-	if r := decode[platform.ValidationResult](t, body); r.Valid || len(r.Errors) != 1 || r.Errors[0].Path != "/alert" {
-		t.Errorf("invalid input: %s", body)
-	}
-	resp, body = h.do(http.MethodPost, "/agents/alert-triage/versions/3/validate", map[string]any{})
-	wantError(t, resp, body, http.StatusBadRequest, platform.CodeRequestInvalid)
-}
-
 func TestAuthAndTenant(t *testing.T) {
 	h := newHarness(t, mock.Options{Token: "s3cret", Tenants: []string{"t1", "t2"}})
 	auth := "Bearer s3cret"
