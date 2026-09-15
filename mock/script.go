@@ -28,7 +28,7 @@ type Outcome struct {
 	output        json.RawMessage
 	err           platform.Error
 	status        int
-	usage         *platform.Usage
+	retryAfter    time.Duration
 	ignoreTimeout bool
 }
 
@@ -55,7 +55,7 @@ func Succeed(output any) Outcome {
 }
 
 // Fail ends the execution with status failed and an error with code, which is an execution-level
-// failure (a 200 carrying the error). Retryable and retry_after_ms default from the spec's table.
+// failure (a 200 carrying the error). Retryable defaults from the spec's table.
 // It panics if the spec defines code as request-level only; use Reject for those.
 func Fail(code platform.ErrorCode) Outcome {
 	info, known := code.Info()
@@ -78,7 +78,11 @@ func Reject(code platform.ErrorCode) Outcome {
 	if !known {
 		status = http.StatusInternalServerError
 	}
-	return Outcome{kind: kindReject, err: defaultError(code, info), status: status}
+	o := Outcome{kind: kindReject, err: defaultError(code, info), status: status}
+	if info.Retryable && (status == http.StatusTooManyRequests || status == http.StatusServiceUnavailable) {
+		o.retryAfter = time.Second
+	}
+	return o
 }
 
 // Hang keeps the execution running until it is cancelled, finished with Server.Finish, or its
@@ -88,12 +92,7 @@ func Hang() Outcome {
 }
 
 func defaultError(code platform.ErrorCode, info platform.CodeInfo) platform.Error {
-	e := platform.Error{Code: code, Message: "mock: " + string(code), Retryable: info.Retryable}
-	if info.Retryable && (info.HTTPStatus == http.StatusTooManyRequests || info.HTTPStatus == http.StatusServiceUnavailable) {
-		ms := int64(1000)
-		e.RetryAfterMs = &ms
-	}
-	return e
+	return platform.Error{Code: code, Message: "mock: " + string(code), Retryable: info.Retryable}
 }
 
 // After sets how long the execution runs before the outcome applies, overriding Options.Latency.
@@ -115,28 +114,17 @@ func (o Outcome) WithRetryable(retryable bool) Outcome {
 	return o
 }
 
-// WithRetryAfter sets retry_after_ms of a Fail or Reject outcome. Reject also sends Retry-After.
+// WithRetryAfter sets the Retry-After header of a Reject outcome, rounded up to whole seconds; zero
+// sends none. Retryable 429 and 503 rejections default to 1s. Other outcomes ignore it, since failed
+// executions carry no wait.
 func (o Outcome) WithRetryAfter(d time.Duration) Outcome {
-	ms := d.Milliseconds()
-	o.err.RetryAfterMs = &ms
-	return o
-}
-
-// WithDetails sets the details of a Fail or Reject outcome.
-func (o Outcome) WithDetails(details ...platform.FieldError) Outcome {
-	o.err.Details = append([]platform.FieldError(nil), details...)
+	o.retryAfter = d
 	return o
 }
 
 // WithHTTPStatus overrides the status of a Reject outcome.
 func (o Outcome) WithHTTPStatus(status int) Outcome {
 	o.status = status
-	return o
-}
-
-// WithUsage sets the usage reported when the execution finishes.
-func (o Outcome) WithUsage(u platform.Usage) Outcome {
-	o.usage = &u
 	return o
 }
 
@@ -148,7 +136,7 @@ func (o Outcome) IgnoreTimeout() Outcome {
 }
 
 func (o Outcome) rejection() rejection {
-	return rejection{status: o.status, body: o.err}
+	return rejection{status: o.status, body: o.err, retryAfter: o.retryAfter}
 }
 
 // Match selects the executions a script applies to. Zero fields match anything.

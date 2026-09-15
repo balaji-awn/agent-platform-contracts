@@ -159,16 +159,16 @@ func (s *Server) listAgents(w http.ResponseWriter, r *http.Request, tenant strin
 		status = platform.VersionPublished
 	}
 	if status != platform.VersionPublished && status != platform.VersionDeprecated {
-		writeError(w, errorFor(platform.CodeRequestInvalid, "status must be published or deprecated",
-			platform.FieldError{Path: "/status", Message: "must be published or deprecated"}))
+		writeError(w, errorFor(platform.CodeRequestInvalid, "invalid request",
+			FieldError{Path: "/status", Message: "must be published or deprecated"}))
 		return
 	}
 	limit := 50
 	if v := q.Get("limit"); v != "" {
 		n, err := strconv.Atoi(v)
 		if err != nil || n < 1 || n > 200 {
-			writeError(w, errorFor(platform.CodeRequestInvalid, "limit must be an integer from 1 to 200",
-				platform.FieldError{Path: "/limit", Message: "must be an integer from 1 to 200"}))
+			writeError(w, errorFor(platform.CodeRequestInvalid, "invalid request",
+				FieldError{Path: "/limit", Message: "must be an integer from 1 to 200"}))
 			return
 		}
 		limit = n
@@ -177,8 +177,8 @@ func (s *Server) listAgents(w http.ResponseWriter, r *http.Request, tenant strin
 	if v := q.Get("cursor"); v != "" {
 		n, err := strconv.Atoi(v)
 		if err != nil || n < 0 {
-			writeError(w, errorFor(platform.CodeRequestInvalid, "invalid cursor",
-				platform.FieldError{Path: "/cursor", Message: "invalid cursor"}))
+			writeError(w, errorFor(platform.CodeRequestInvalid, "invalid request",
+				FieldError{Path: "/cursor", Message: "is not a valid cursor"}))
 			return
 		}
 		offset = n
@@ -280,8 +280,8 @@ func (s *Server) listAgentVersions(w http.ResponseWriter, r *http.Request, tenan
 func (s *Server) versionFromPath(w http.ResponseWriter, r *http.Request, tenant string) *AgentVersion {
 	n, err := strconv.Atoi(r.PathValue("version"))
 	if err != nil || n < 1 {
-		writeError(w, errorFor(platform.CodeRequestInvalid, "version must be a positive integer",
-			platform.FieldError{Path: "/version", Message: "must be a positive integer"}))
+		writeError(w, errorFor(platform.CodeRequestInvalid, "invalid request",
+			FieldError{Path: "/version", Message: "must be a positive integer"}))
 		return nil
 	}
 	s.mu.Lock()

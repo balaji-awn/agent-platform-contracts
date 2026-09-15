@@ -2,7 +2,7 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: Agent Platform API
-  version: 0.2.0-draft
+  version: 0.3.0-draft
   description: |
     API that Asoar consumes to discover agents at design time and execute them at runtime.
     Design decisions and rationale: docs/design/agent-nodes.md.
@@ -121,10 +121,13 @@ paths:
       operationId: createExecution
       summary: Start an agent execution
       description: |
-        Hybrid sync/async. The server waits up to the `Prefer: wait` window for the execution to reach
-        a terminal state (succeeded, failed, or cancelled). If it does, the response is 200 with the
-        execution, whatever its status: a failed execution is a 200 with `status: failed` and `error`
-        set. Otherwise the response is 202 and the caller polls getExecution.
+        Asynchronous with short polling. The server never holds the request open waiting for the
+        execution. It answers 202 with the queued or running execution and a `Location`; the caller
+        then polls getExecution, at an interval it chooses within the `RateLimit-*` headers, until the
+        execution reaches a terminal state (succeeded, failed, or cancelled). The response is 200
+        only when the execution is already terminal as the response is written, for example an
+        idempotent replay of a finished execution. A failed execution is a 200 with `status: failed`
+        and `error` set.
 
         Checks run in this order. Each failure is a request-level rejection:
         1. Auth and tenant: 401 UNAUTHORIZED, 403 FORBIDDEN, 400 REQUEST_INVALID for a missing tenant.
@@ -132,17 +135,18 @@ paths:
         3. Idempotent replay (below).
         4. Unknown or invisible agent version: 404 AGENT_VERSION_NOT_FOUND. Disabled version:
            409 AGENT_VERSION_DISABLED. Deprecated versions still execute.
-        5. `timeout_ms` above the version's `max_timeout_ms`: 400 REQUEST_INVALID with a `details`
-           entry for `/timeout_ms`.
-        6. Input that fails the input schema: 400 INPUT_SCHEMA_INVALID with `details`.
+        5. `timeout_ms` above the version's `max_timeout_ms`: 400 REQUEST_INVALID whose message names
+           `/timeout_ms`.
+        6. Input that fails the input schema: 400 INPUT_SCHEMA_INVALID whose message names each
+           offending field.
         7. Admission refused: 429 QUOTA_EXCEEDED or PROVIDER_RATE_LIMITED, or 503 PROVIDER_UNAVAILABLE,
-           each with `retry_after_ms`.
+           each with a `Retry-After` header.
 
         Idempotency: keys are scoped to the tenant and retained for at least 24 hours after the
         execution is created. A request whose key matches a recorded execution is a replay. If its body
         is the same JSON value as the original (compared after RFC 8785 canonicalization, so key order
         and whitespace do not matter), the server starts nothing and returns the recorded execution in
-        its current state, honoring `Prefer: wait` again. This holds even if the version has since been
+        its current state: 200 if terminal, else 202. This holds even if the version has since been
         disabled. The same key with a different body returns 409 IDEMPOTENCY_KEY_REUSED. Asoar uses
         `run_id + node_path + attempt` as the key.
 
@@ -150,7 +154,6 @@ paths:
         TIMEOUT, which is retryable.
       parameters:
         - $ref: '#/components/parameters/TenantId'
-        - $ref: '#/components/parameters/PreferWait'
         - name: Idempotency-Key
           in: header
           required: true
@@ -171,8 +174,8 @@ paths:
       operationId: getExecution
       summary: Get execution status and result
       description: |
-        A failed execution is a 200 with `status: failed`. Unknown or invisible executions return
-        404 EXECUTION_NOT_FOUND.
+        The polling endpoint. The caller chooses the polling interval. A failed execution is a 200 with
+        `status: failed`. Unknown or invisible executions return 404 EXECUTION_NOT_FOUND.
       parameters:
         - $ref: '#/components/parameters/TenantId'
         - $ref: '#/components/parameters/ExecutionId'
@@ -207,26 +210,6 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/ExecutionTrace' }
         default: { $ref: '#/components/responses/Error' }
-
-webhooks:
-  executionFinished:
-    post:
-      summary: Planned. Sent to the request's callback_url when an execution reaches a terminal state.
-      description: Not required for the first version; Asoar polls. Receivers must treat delivery as at-least-once.
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [event, execution]
-              properties:
-                event:
-                  type: string
-                  enum: [execution.succeeded, execution.failed, execution.cancelled]
-                execution: { $ref: '#/components/schemas/Execution' }
-      responses:
-        '204':
-          description: Received
 
 components:
   securitySchemes:
@@ -266,18 +249,6 @@ components:
       name: limit
       in: query
       schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
-    PreferWait:
-      name: Prefer
-      in: header
-      description: |
-        RFC 7240 preferences. The server honors `wait=N`: hold the request open up to N seconds for a
-        terminal result. Other preferences are ignored, and a `wait` value that is not a non-negative
-        integer is ignored. Without `wait` the server does not wait: it returns 200 only if the
-        execution is already terminal, otherwise 202. The server may cap N; the applied value is
-        echoed in `Preference-Applied`.
-      schema:
-        type: string
-        examples: ['wait=20', 'respond-async, wait=20']
 
   headers:
     RateLimitLimit:
@@ -291,13 +262,9 @@ components:
       schema: { type: integer }
     RetryAfter:
       description: |
-        Whole seconds, rounded up from `retry_after_ms`. Sent with request-level rejections that set
-        `retry_after_ms`. The body field is authoritative; the header serves intermediaries and generic
-        HTTP clients.
+        Minimum wait before retrying, in whole seconds. Sent with retryable request-level rejections
+        (429 and 503). Failed executions carry no wait; the caller applies its own backoff.
       schema: { type: integer }
-    PreferenceApplied:
-      description: Present when the request asked for `wait`. `wait=N`, where N is the whole seconds the server waited at most, after capping.
-      schema: { type: string, examples: ['wait=20'] }
 
   responses:
     AgentList:
@@ -353,23 +320,21 @@ components:
           schema: { $ref: '#/components/schemas/AgentVersionContract' }
     ExecutionFinished:
       description: |
-        Execution reached a terminal state (succeeded, failed, or cancelled) within the wait window, or
-        an idempotent replay of a terminal execution.
+        Execution was already terminal (succeeded, failed, or cancelled) when the response was written,
+        for example an idempotent replay of a finished execution.
       headers:
         RateLimit-Limit: { $ref: '#/components/headers/RateLimitLimit' }
         RateLimit-Remaining: { $ref: '#/components/headers/RateLimitRemaining' }
         RateLimit-Reset: { $ref: '#/components/headers/RateLimitReset' }
-        Preference-Applied: { $ref: '#/components/headers/PreferenceApplied' }
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Execution' }
     ExecutionAccepted:
-      description: Execution is still queued or running. Poll getExecution.
+      description: Execution is queued or running. Poll getExecution.
       headers:
         RateLimit-Limit: { $ref: '#/components/headers/RateLimitLimit' }
         RateLimit-Remaining: { $ref: '#/components/headers/RateLimitRemaining' }
         RateLimit-Reset: { $ref: '#/components/headers/RateLimitReset' }
-        Preference-Applied: { $ref: '#/components/headers/PreferenceApplied' }
         Location:
           description: URI reference to the execution resource. Resolve it against the request URL.
           schema: { type: string }
@@ -499,15 +464,6 @@ components:
         digest: { type: string, pattern: '^sha256:[a-f0-9]{64}$' }
         published_at: { type: string, format: date-time }
 
-    FieldError:
-      type: object
-      required: [path, message]
-      properties:
-        path:
-          type: string
-          description: JSON Pointer. For INPUT_SCHEMA_INVALID it points into the input, e.g. /alert/source; for other request errors it points into the request body, e.g. /timeout_ms.
-        message: { type: string }
-
     ExecutionRequest:
       type: object
       required: [agent_id, agent_version, input, context, timeout_ms]
@@ -522,10 +478,6 @@ components:
           type: integer
           minimum: 1000
           description: Per attempt, measured from execution creation. Must not exceed the version's max_timeout_ms (else 400 REQUEST_INVALID).
-        callback_url:
-          type: string
-          format: uri
-          description: Planned. Receives the executionFinished webhook.
 
     ExecutionContext:
       type: object
@@ -541,7 +493,7 @@ components:
 
     Execution:
       type: object
-      required: [execution_id, status, agent_id, agent_version, created_at]
+      required: [execution_id, status, agent_id, agent_version]
       properties:
         execution_id: { type: string }
         status:
@@ -554,18 +506,7 @@ components:
         error:
           $ref: '#/components/schemas/Error'
           description: Present when status is failed. Absent for cancelled executions.
-        usage: { $ref: '#/components/schemas/Usage' }
-        model:
-          type: object
-          properties:
-            provider: { type: string }
-            name: { type: string }
-        latency_ms:
-          type: integer
-          description: Present once the execution is terminal.
         trace_id: { type: string }
-        created_at: { type: string, format: date-time }
-        finished_at: { type: [string, 'null'], format: date-time }
       allOf:
         - if:
             required: [status]
@@ -577,13 +518,6 @@ components:
             properties: { status: { const: failed } }
           then:
             required: [error]
-
-    Usage:
-      type: object
-      properties:
-        input_tokens: { type: integer }
-        output_tokens: { type: integer }
-        cost_usd: { type: number }
 
     ExecutionTrace:
       type: object
@@ -657,14 +591,12 @@ components:
             - UNAUTHORIZED
             - FORBIDDEN
             - INTERNAL
-        message: { type: string }
+        message:
+          type: string
+          description: |
+            Human-readable. For validation errors it names each offending field by JSON Pointer, into
+            the input for INPUT_SCHEMA_INVALID and into the request body otherwise, e.g.
+            `input does not match the input schema: /alert/source is required`. Never parse it.
         retryable:
           type: boolean
           description: Callers decide retries from this flag, not from the code.
-        retry_after_ms:
-          type: integer
-          minimum: 0
-          description: Minimum wait before retrying. Authoritative over the Retry-After header.
-        details:
-          type: array
-          items: { $ref: '#/components/schemas/FieldError' }

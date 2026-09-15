@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/sbalaji6/agent-platform-contracts/internal/jcs"
@@ -29,6 +27,8 @@ type execution struct {
 	timers        []*time.Timer
 	replays       int
 	cancelCalls   int
+	started       time.Time // for the mock trace
+	finished      time.Time // zero until terminal
 }
 
 func (e *execution) stopTimers() {
@@ -44,22 +44,6 @@ func (e *execution) snapshot() platform.Execution {
 	if e.x.Error != nil {
 		err := *e.x.Error
 		x.Error = &err
-	}
-	if e.x.Usage != nil {
-		u := *e.x.Usage
-		x.Usage = &u
-	}
-	if e.x.Model != nil {
-		m := *e.x.Model
-		x.Model = &m
-	}
-	if e.x.FinishedAt != nil {
-		t := *e.x.FinishedAt
-		x.FinishedAt = &t
-	}
-	if e.x.LatencyMs != nil {
-		l := *e.x.LatencyMs
-		x.LatencyMs = &l
 	}
 	return x
 }
@@ -89,10 +73,10 @@ func decodeRaw(raw []byte, v any, strict bool, required ...string) (rejection, b
 	if err := json.Unmarshal(raw, &fields); err != nil || fields == nil {
 		return errorFor(platform.CodeRequestInvalid, "body must be a JSON object"), false
 	}
-	var details []platform.FieldError
+	var details []FieldError
 	for _, name := range required {
 		if _, ok := fields[name]; !ok {
-			details = append(details, platform.FieldError{Path: "/" + name, Message: "is required"})
+			details = append(details, FieldError{Path: "/" + name, Message: "is required"})
 		}
 	}
 	if len(details) > 0 {
@@ -114,48 +98,29 @@ func checkExecutionRequest(raw []byte, req *platform.ExecutionRequest) (rejectio
 		Context map[string]json.RawMessage `json:"context"`
 	}
 	_ = json.Unmarshal(raw, &top)
-	var details []platform.FieldError
+	var details []FieldError
 	if top.Context == nil {
-		details = append(details, platform.FieldError{Path: "/context", Message: "must be an object"})
+		details = append(details, FieldError{Path: "/context", Message: "must be an object"})
 	} else {
 		for _, f := range []string{"workflow_id", "run_id", "node_path"} {
 			if _, ok := top.Context[f]; !ok {
-				details = append(details, platform.FieldError{Path: "/context/" + f, Message: "is required"})
+				details = append(details, FieldError{Path: "/context/" + f, Message: "is required"})
 			}
 		}
 		if _, ok := top.Context["attempt"]; ok && req.Context.Attempt < 1 {
-			details = append(details, platform.FieldError{Path: "/context/attempt", Message: "must be at least 1"})
+			details = append(details, FieldError{Path: "/context/attempt", Message: "must be at least 1"})
 		}
 	}
 	if req.AgentVersion < 1 {
-		details = append(details, platform.FieldError{Path: "/agent_version", Message: "must be at least 1"})
+		details = append(details, FieldError{Path: "/agent_version", Message: "must be at least 1"})
 	}
 	if req.TimeoutMs < 1000 {
-		details = append(details, platform.FieldError{Path: "/timeout_ms", Message: "must be at least 1000"})
+		details = append(details, FieldError{Path: "/timeout_ms", Message: "must be at least 1000"})
 	}
 	if len(details) > 0 {
 		return errorFor(platform.CodeRequestInvalid, "invalid request body", details...), false
 	}
 	return rejection{}, true
-}
-
-// preferWait returns the wait window to apply and whether the request asked for one.
-func (s *Server) preferWait(r *http.Request) (time.Duration, bool) {
-	for _, line := range r.Header.Values(platform.HeaderPrefer) {
-		for _, pref := range strings.Split(line, ",") {
-			token, _, _ := strings.Cut(pref, ";")
-			name, value, found := strings.Cut(strings.TrimSpace(token), "=")
-			if !found || !strings.EqualFold(strings.TrimSpace(name), "wait") {
-				continue
-			}
-			n, err := strconv.Atoi(strings.Trim(strings.TrimSpace(value), `"`))
-			if err != nil || n < 0 {
-				return 0, false
-			}
-			return min(time.Duration(n)*time.Second, s.opts.MaxWait), true
-		}
-	}
-	return 0, false
 }
 
 // admitLocked runs the version, timeout, and input checks for createExecution. v is nil when the
@@ -168,8 +133,8 @@ func (s *Server) admitLocked(v *AgentVersion, timeoutMs int64, input json.RawMes
 		return errorFor(platform.CodeAgentVersionDisabled, fmt.Sprintf("%s@%d is disabled", v.AgentID, v.Version)), false
 	}
 	if timeoutMs > v.Limits.MaxTimeoutMs {
-		msg := fmt.Sprintf("timeout_ms %d exceeds max_timeout_ms %d", timeoutMs, v.Limits.MaxTimeoutMs)
-		return errorFor(platform.CodeRequestInvalid, msg, platform.FieldError{Path: "/timeout_ms", Message: msg}), false
+		msg := fmt.Sprintf("%d exceeds max_timeout_ms %d", timeoutMs, v.Limits.MaxTimeoutMs)
+		return errorFor(platform.CodeRequestInvalid, "invalid request body", FieldError{Path: "/timeout_ms", Message: msg}), false
 	}
 	errs, err := s.opts.Validator.ValidateInput(v.InputSchema, input)
 	if err != nil {
@@ -201,7 +166,6 @@ func (s *Server) createExecution(w http.ResponseWriter, r *http.Request, tenant 
 		writeError(w, rej)
 		return
 	}
-	wait, asked := s.preferWait(r)
 
 	s.mu.Lock()
 	if e := s.byKey[idemKey{tenant, key}]; e != nil {
@@ -211,8 +175,7 @@ func (s *Server) createExecution(w http.ResponseWriter, r *http.Request, tenant 
 			return
 		}
 		e.replays++
-		s.mu.Unlock()
-		s.respondExecution(w, r, e, wait, asked)
+		s.respondExecutionLocked(w, e)
 		return
 	}
 	v := s.visibleVersionLocked(tenant, req.AgentID, req.AgentVersion)
@@ -230,27 +193,12 @@ func (s *Server) createExecution(w http.ResponseWriter, r *http.Request, tenant 
 		return
 	}
 	e := s.startLocked(tenant, key, canon, req, v, o)
-	s.mu.Unlock()
-	s.respondExecution(w, r, e, wait, asked)
+	s.respondExecutionLocked(w, e)
 }
 
-// respondExecution waits up to wait for e to finish and writes 200 if it is terminal, else 202.
-func (s *Server) respondExecution(w http.ResponseWriter, r *http.Request, e *execution, wait time.Duration, asked bool) {
-	if asked {
-		w.Header().Set(platform.HeaderPreferenceApplied, fmt.Sprintf("wait=%d", int(wait/time.Second)))
-	}
-	if wait > 0 {
-		t := time.NewTimer(wait)
-		defer t.Stop()
-		select {
-		case <-e.done:
-		case <-t.C:
-		case <-s.closing:
-		case <-r.Context().Done():
-			return
-		}
-	}
-	s.mu.Lock()
+// respondExecutionLocked writes 200 if e is terminal, else 202 with Location. It never waits. The
+// caller holds s.mu, which it releases.
+func (s *Server) respondExecutionLocked(w http.ResponseWriter, e *execution) {
 	x := e.snapshot()
 	s.mu.Unlock()
 	if x.Status.Terminal() {
@@ -272,6 +220,7 @@ func (s *Server) startLocked(tenant, key string, canon []byte, req platform.Exec
 		req:           req,
 		defaultOutput: v.DefaultOutput,
 		done:          make(chan struct{}),
+		started:       time.Now().UTC(),
 	}
 	e.x = platform.Execution{
 		ExecutionID:  id,
@@ -279,10 +228,6 @@ func (s *Server) startLocked(tenant, key string, canon []byte, req platform.Exec
 		AgentID:      v.AgentID,
 		AgentVersion: v.Version,
 		TraceID:      "trace_" + id,
-		CreatedAt:    time.Now().UTC(),
-	}
-	if v.Model != nil && (v.Model.Provider != "" || v.Model.Name != "") {
-		e.x.Model = &platform.ExecutionModel{Provider: v.Model.Provider, Name: v.Model.Name}
 	}
 	s.executions[id] = e
 	s.order = append(s.order, e)
@@ -320,7 +265,6 @@ func (s *Server) finishLocked(e *execution, o Outcome) {
 	if e.x.Status.Terminal() {
 		return
 	}
-	now := time.Now().UTC()
 	switch o.kind {
 	case kindSucceed:
 		e.x.Status = platform.ExecutionSucceeded
@@ -328,22 +272,14 @@ func (s *Server) finishLocked(e *execution, o Outcome) {
 		if len(e.x.Output) == 0 {
 			e.x.Output = e.defaultOutput
 		}
-		e.x.Usage = &platform.Usage{InputTokens: 120, OutputTokens: 40, CostUSD: 0.0012}
 	case kindFail:
 		err := o.err
 		e.x.Status = platform.ExecutionFailed
 		e.x.Error = &err
-		e.x.Usage = &platform.Usage{}
 	case kindCancel:
 		e.x.Status = platform.ExecutionCancelled
 	}
-	if o.usage != nil {
-		u := *o.usage
-		e.x.Usage = &u
-	}
-	e.x.FinishedAt = &now
-	latency := now.Sub(e.x.CreatedAt).Milliseconds()
-	e.x.LatencyMs = &latency
+	e.finished = time.Now().UTC()
 	e.stopTimers()
 	close(e.done)
 }
@@ -394,8 +330,12 @@ func (s *Server) getExecutionTrace(w http.ResponseWriter, r *http.Request, tenan
 		writeError(w, errorFor(platform.CodeExecutionNotFound, "execution not found"))
 		return
 	}
-	x := e.snapshot()
+	step := platform.TraceStep{Type: "model_call", StartedAt: e.started, Summary: "mock model call"}
+	if !e.finished.IsZero() {
+		ended := e.finished
+		step.EndedAt = &ended
+	}
+	id := e.x.ExecutionID
 	s.mu.Unlock()
-	step := platform.TraceStep{Type: "model_call", StartedAt: x.CreatedAt, EndedAt: x.FinishedAt, Summary: "mock model call"}
-	writeJSON(w, http.StatusOK, platform.ExecutionTrace{ExecutionID: x.ExecutionID, Steps: []platform.TraceStep{step}})
+	writeJSON(w, http.StatusOK, platform.ExecutionTrace{ExecutionID: id, Steps: []platform.TraceStep{step}})
 }

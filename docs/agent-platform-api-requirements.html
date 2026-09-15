@@ -714,8 +714,8 @@
             <dd>One hash over the schemas and limits lets Asoar detect drift before it publishes a workflow.</dd>
           </div>
           <div>
-            <dt>Hybrid sync and async</dt>
-            <dd><code>Prefer: wait=N</code> returns the result inline when it is fast, and a 202 to poll when it is not.</dd>
+            <dt>Async short polling</dt>
+            <dd><code>POST /executions</code> answers 202 right away, and Asoar polls <code>GET /executions/{id}</code> until the execution is terminal. No held requests, no webhooks.</dd>
           </div>
           <div>
             <dt>Replay-safe writes</dt>
@@ -733,7 +733,6 @@
 
         <h4>Not required for the first version</h4>
         <ul>
-          <li>Completion webhooks. Asoar polls first; <code>callback_url</code> is reserved in the request body.</li>
           <li>A batch execution endpoint for loop fan-out.</li>
           <li>Tools that call back into Asoar integrations.</li>
         </ul>
@@ -879,17 +878,16 @@
               <tr><td class="code">agent_version</td><td><span class="chip neutral">yes</span></td><td>The pinned version. Integer, at least 1.</td></tr>
               <tr><td class="code">input</td><td><span class="chip neutral">yes</span></td><td>Must conform to that version's <code>input_schema</code>.</td></tr>
               <tr><td class="code">context</td><td><span class="chip neutral">yes</span></td><td><code>workflow_id</code>, <code>run_id</code>, <code>node_path</code>, and optional <code>attempt</code>. Echo it into traces and billing records so a cost can be traced back to a workflow run.</td></tr>
-              <tr><td class="code">timeout_ms</td><td><span class="chip neutral">yes</span></td><td>Per attempt, measured from execution creation. Above <code>max_timeout_ms</code> is a 400.</td></tr>
-              <tr><td class="code">callback_url</td><td><em>no</em></td><td>Reserved for the planned completion webhook.</td></tr>
-            </tbody>
+              <tr><td class="code">timeout_ms</td><td><span class="chip neutral">yes</span></td><td>Per attempt, measured from execution creation. Above <code>max_timeout_ms</code> is a 400.</td></tr>            </tbody>
           </table>
         </div>
 
         <div class="req">
           <span class="id">R5</span>
           <div>
-            <p><span class="must">Honour <code>Prefer: wait=N</code></span>: hold the request open up to N seconds for a terminal state, then answer 200 with the execution. If it is still running, answer 202 with the <code>execution_id</code> and a <code>Location</code> header.</p>
-            <p>Parse it as RFC 7240, so <code>respond-async, wait=20</code> works and unknown preferences are ignored. Without <code>wait</code> the platform does not block. The server may cap N and reports what it applied in <code>Preference-Applied</code>.</p>
+            <p><span class="must">Answer without waiting</span>: never hold the request open for the result. Answer 202 with the execution and a <code>Location</code> header. Answer 200 only if the execution is already terminal, for example a replay after it finished.</p>
+            <p><code>GET /executions/{id}</code> is the polling endpoint. Asoar chooses the polling interval, backing off and pacing itself by the rate-limit headers; the platform sends no poll hint.</p>
+            <p>The execution carries <code>execution_id</code>, <code>status</code>, <code>agent_id</code>, <code>agent_version</code>, <code>output</code> or <code>error</code>, and <code>trace_id</code>. It does not report usage, model, latency, or timestamps.</p>
           </div>
         </div>
 
@@ -900,9 +898,9 @@
           <li>Missing or oversized <code>Idempotency-Key</code>, or a malformed body &mdash; <code>400 REQUEST_INVALID</code>.</li>
           <li>Idempotent replay &mdash; see <a href="#idempotency">section 7</a>. Checked before the version exists, so a replay still works after a version is disabled.</li>
           <li>Unknown or invisible version &mdash; <code>404</code>. Disabled version &mdash; <code>409</code>. Deprecated versions still execute.</li>
-          <li><code>timeout_ms</code> above <code>max_timeout_ms</code> &mdash; <code>400</code> with a <code>details</code> entry for <code>/timeout_ms</code>.</li>
-          <li>Input that fails the input schema &mdash; <code>400 INPUT_SCHEMA_INVALID</code> with per-field <code>details</code>.</li>
-          <li>Admission refused &mdash; <code>429</code> or <code>503</code> with <code>retry_after_ms</code>.</li>
+          <li><code>timeout_ms</code> above <code>max_timeout_ms</code> &mdash; <code>400</code> whose message names <code>/timeout_ms</code>.</li>
+          <li>Input that fails the input schema &mdash; <code>400 INPUT_SCHEMA_INVALID</code> whose message names each offending field.</li>
+          <li>Admission refused &mdash; <code>429</code> or <code>503</code> with a <code>Retry-After</code> header.</li>
         </ol>
 
         <div class="req">
@@ -1005,8 +1003,8 @@
           A <strong>request-level rejection</strong> means no execution was created: a non-2xx status carrying
           <code>{"error": {...}}</code>, and the idempotency key stays free. An <strong>execution-level failure</strong>
           means the execution exists and reached <code>status: failed</code>: HTTP 200 carrying the execution with its
-          <code>error</code> set. A failed execution is never an error response, including when it fails inside the
-          <code>Prefer: wait</code> window.
+          <code>error</code> set, whether it comes from <code>POST /executions</code> or a poll of
+          <code>GET /executions/{id}</code>. A failed execution is never an error response.
         </p>
 
         <div class="req">
@@ -1050,14 +1048,15 @@
         <div class="req">
           <span class="id">R12</span>
           <div>
-            <p>Retryable errors <span class="must">carry <code>retry_after_ms</code></span>, which is authoritative. The <code>Retry-After</code> header, rounded up to whole seconds, is for intermediaries.</p>
+            <p>Retryable 429 and 503 rejections <span class="must">carry a <code>Retry-After</code> header</span> in whole seconds. The error body has no wait field, and failed executions carry no wait; Asoar applies the node's backoff.</p>
             <p><code>QUOTA_EXCEEDED</code> covers both the tenant's quota and the advertised request rate limit. Because the platform absorbs transient provider errors internally, a <code>PROVIDER_*</code> failure that reaches Asoar is terminal for that execution.</p>
           </div>
         </div>
 
         <p>
-          Validation errors carry <code>details</code>: a list of <code>{path, message}</code> where <code>path</code> is a JSON
-          Pointer into the input for schema errors, or into the request body for everything else.
+          The error object has no structured field list. For validation errors, <code>message</code> names each offending
+          field by JSON Pointer &mdash; into the input for schema errors, into the request body for everything else &mdash;
+          for example <code>input does not match the input schema: /alert/source is required</code>. Callers never parse it.
         </p>
       </section>
 
@@ -1082,7 +1081,7 @@
           <span class="id">R14</span>
           <div>
             <p><span class="must">A repeat of the same key with the same JSON body returns the recorded execution in its current state and starts nothing.</span></p>
-            <p>Bodies are compared as JSON values after RFC 8785 canonicalization, so key order and whitespace do not matter. The replay honours <code>Prefer: wait</code> again, which is what lets a redelivered job simply wait for the original execution to finish.</p>
+            <p>Bodies are compared as JSON values after RFC 8785 canonicalization, so key order and whitespace do not matter. The replay answers 200 if the execution has finished or 202 if it is still running, so a redelivered job just goes back to polling the original execution.</p>
           </div>
         </div>
 
@@ -1161,30 +1160,25 @@ sequenceDiagram
 
     Note over Q: Resolve bindings from upstream nodes.<br/>Idempotency-Key is run_id + node_path + attempt
     Q->>C: Execute agent node, attempt 1
-    C->>P: POST /executions with Prefer wait=20 and Idempotency-Key r1/triage/1
-
-    alt Terminal inside the wait window
-        P-->>C: 200 succeeded with output, usage, trace_id
-    else Still running
-        P-->>C: 202 execution_id and Location
-        loop Snooze the job, then poll
-            C->>P: GET /executions/exec_01
-            P-->>C: 200 status running
-        end
+    C->>P: POST /executions with Idempotency-Key r1/triage/1
+    P-->>C: 202 execution_id and Location
+    loop Snooze the job with backoff, then poll
         C->>P: GET /executions/exec_01
-        P-->>C: 200 status succeeded
+        P-->>C: 200 status running
     end
+    C->>P: GET /executions/exec_01
+    P-->>C: 200 status succeeded with output and trace_id
     C-->>Q: Execution result
-    Note over Q: Re-validate output against output_schema,<br/>checkpoint the node result by node_path,<br/>journal execution_id, trace_id and usage
+    Note over Q: Re-validate output against output_schema,<br/>checkpoint the node result by node_path,<br/>journal execution_id and trace_id
 
     alt Worker crashed before the result was stored
         Q->>C: Queue redelivers the same job
         C->>P: POST /executions with the same key and body
-        P-->>C: 200 the recorded execution, nothing new started
+        P-->>C: 200 or 202 with the recorded execution, nothing new started
     end
 
     alt Failure with retryable true
-        P-->>C: 200 failed, PROVIDER_UNAVAILABLE, retry_after_ms
+        P-->>C: 200 failed, PROVIDER_UNAVAILABLE, retryable true
         Note over Q: Retry as attempt 2, which forms a new key
     else Failure with retryable false
         P-->>C: 200 failed, OUTPUT_SCHEMA_VIOLATION
@@ -1228,8 +1222,8 @@ sequenceDiagram
             <p>How long can recorded keys actually be retained (R16 proposes 24 hours)?</p>
           </div>
           <div>
-            <span class="tag">Q4 &middot; webhooks</span>
-            <p>When can <code>execution.succeeded/failed/cancelled</code> and version lifecycle events land? Catalog cache invalidation and parking long executions both depend on them.</p>
+            <span class="tag">Q4 &middot; lifecycle webhooks</span>
+            <p>When can version lifecycle events (<code>agent.version.published</code> / <code>deprecated</code>) land? Catalog cache invalidation depends on them. Execution results are short-polled and need no webhook.</p>
           </div>
           <div>
             <span class="tag">Q5 &middot; batch</span>
@@ -1240,11 +1234,7 @@ sequenceDiagram
             <p>If agents can call tools that reach external systems, do those use the platform's own connectors, or call back into Asoar integrations?</p>
           </div>
           <div>
-            <span class="tag">Q7 &middot; billing</span>
-            <p><code>cost_usd</code> is currently a float. Integer micro-USD would avoid rounding drift in per-run cost rollups &mdash; worth changing before anyone depends on it.</p>
-          </div>
-          <div>
-            <span class="tag">Q8 &middot; limits</span>
+            <span class="tag">Q7 &middot; limits</span>
             <p>What are the real rate limits and quota units per tenant, and which <code>RateLimit</code> header draft should we standardise on?</p>
           </div>
         </div>

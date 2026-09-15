@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -116,16 +117,16 @@ func TestCatalog(t *testing.T) {
 	}
 }
 
-func TestSyncSuccess(t *testing.T) {
-	srv, tc := setup(t, mock.Options{Latency: 20 * time.Millisecond}, client.Config{})
-	x, resp, err := tc.CreateExecution(context.Background(), "run1/triage_agent/1", execRequest("run1"), 5*time.Second)
+func TestInstantSuccess(t *testing.T) {
+	srv, tc := setup(t, mock.Options{}, client.Config{})
+	x, resp, err := tc.CreateExecution(context.Background(), "run1/triage_agent/1", execRequest("run1"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if resp.StatusCode != 200 || resp.Accepted() || x.Status != platform.ExecutionSucceeded || client.ExecutionError(x) != nil {
 		t.Fatalf("status %d, execution %+v", resp.StatusCode, x)
 	}
-	if x.Usage == nil || x.LatencyMs == nil || x.TraceID == "" || len(x.Output) == 0 {
+	if x.TraceID == "" || len(x.Output) == 0 {
 		t.Errorf("incomplete execution %+v", x)
 	}
 	calls := srv.Calls(mock.OpCreateExecution)
@@ -135,10 +136,10 @@ func TestSyncSuccess(t *testing.T) {
 }
 
 func TestAcceptedThenPoll(t *testing.T) {
-	srv, tc := setup(t, mock.Options{MaxWait: 20 * time.Millisecond}, client.Config{})
+	srv, tc := setup(t, mock.Options{}, client.Config{})
 	srv.Script(mock.Match{}, mock.Succeed(map[string]string{"severity": "low", "verdict": "benign"}).After(150*time.Millisecond))
 
-	x, resp, err := tc.CreateExecution(context.Background(), "k1", execRequest("run1"), 10*time.Second)
+	x, resp, err := tc.CreateExecution(context.Background(), "k1", execRequest("run1"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,9 +154,9 @@ func TestAcceptedThenPoll(t *testing.T) {
 
 func TestRetryableExecutionFailure(t *testing.T) {
 	srv, tc := setup(t, mock.Options{}, client.Config{})
-	srv.Script(mock.Match{}, mock.Fail(platform.CodeProviderUnavailable).WithRetryAfter(3*time.Second))
+	srv.Script(mock.Match{}, mock.Fail(platform.CodeProviderUnavailable))
 
-	x, resp, err := tc.CreateExecution(context.Background(), "k1", execRequest("run1"), 5*time.Second)
+	x, resp, err := tc.CreateExecution(context.Background(), "k1", execRequest("run1"))
 	if err != nil {
 		t.Fatalf("a failed execution must not be a Go error: %v", err)
 	}
@@ -163,7 +164,7 @@ func TestRetryableExecutionFailure(t *testing.T) {
 		t.Fatalf("status %d, execution %+v", resp.StatusCode, x)
 	}
 	e := asError(t, client.ExecutionError(x))
-	if e.Code != platform.CodeProviderUnavailable || !e.Retryable || e.RetryAfter != 3*time.Second || e.ExecutionID != x.ExecutionID {
+	if e.Code != platform.CodeProviderUnavailable || !e.Retryable || e.RetryAfter != 0 || e.ExecutionID != x.ExecutionID {
 		t.Errorf("execution error %+v", e)
 	}
 }
@@ -174,14 +175,14 @@ func TestNonRetryableFailures(t *testing.T) {
 
 	bad := execRequest("run1")
 	bad.Input = json.RawMessage(`{}`)
-	_, resp, err := tc.CreateExecution(ctx, "k1", bad, 5*time.Second)
+	_, resp, err := tc.CreateExecution(ctx, "k1", bad)
 	e := asError(t, err)
-	if e.StatusCode != 400 || e.Code != platform.CodeInputSchemaInvalid || e.Retryable || len(e.Details) != 1 || resp == nil {
+	if e.StatusCode != 400 || e.Code != platform.CodeInputSchemaInvalid || e.Retryable || !strings.Contains(e.Message, "/alert") || resp == nil {
 		t.Errorf("invalid input: %+v", e)
 	}
 
 	srv.Script(mock.Match{}, mock.Fail(platform.CodeOutputSchemaViolation))
-	x, _, err := tc.CreateExecution(ctx, "k2", execRequest("run1"), 5*time.Second)
+	x, _, err := tc.CreateExecution(ctx, "k2", execRequest("run1"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -190,7 +191,7 @@ func TestNonRetryableFailures(t *testing.T) {
 	}
 
 	srv.SetVersionStatus("alert-triage", 3, platform.VersionDisabled)
-	_, _, err = tc.CreateExecution(ctx, "k3", execRequest("run1"), 0)
+	_, _, err = tc.CreateExecution(ctx, "k3", execRequest("run1"))
 	if e := asError(t, err); e.StatusCode != 409 || e.Code != platform.CodeAgentVersionDisabled || client.IsRetryable(err) {
 		t.Errorf("disabled: %+v", e)
 	}
@@ -200,10 +201,10 @@ func TestRetryableRejection(t *testing.T) {
 	srv, tc := setup(t, mock.Options{}, client.Config{})
 	srv.Script(mock.Match{}, mock.Reject(platform.CodeQuotaExceeded).WithRetryAfter(1500*time.Millisecond))
 
-	_, resp, err := tc.CreateExecution(context.Background(), "k1", execRequest("run1"), 5*time.Second)
+	_, resp, err := tc.CreateExecution(context.Background(), "k1", execRequest("run1"))
 	e := asError(t, err)
-	// The body says 1500ms and the header says 2s; the body is authoritative.
-	if e.StatusCode != 429 || e.Code != platform.CodeQuotaExceeded || !e.Retryable || e.RetryAfter != 1500*time.Millisecond {
+	// The mock rounds 1500ms up to a 2s header, which is all the client sees.
+	if e.StatusCode != 429 || e.Code != platform.CodeQuotaExceeded || !e.Retryable || e.RetryAfter != 2*time.Second {
 		t.Errorf("rejection %+v", e)
 	}
 	if resp.Header.Get("Retry-After") != "2" || e.RateLimit == nil {
@@ -211,7 +212,7 @@ func TestRetryableRejection(t *testing.T) {
 	}
 
 	// The key was not recorded, so the retry with the same key starts the execution.
-	x, _, err := tc.CreateExecution(context.Background(), "k1", execRequest("run1"), 5*time.Second)
+	x, _, err := tc.CreateExecution(context.Background(), "k1", execRequest("run1"))
 	if err != nil || x.Status != platform.ExecutionSucceeded || len(srv.Executions()) != 1 {
 		t.Errorf("retry = %+v, %v; %d executions", x, err, len(srv.Executions()))
 	}
@@ -223,10 +224,11 @@ func TestTimeout(t *testing.T) {
 	req := execRequest("run1")
 	req.TimeoutMs = 1000
 
-	x, _, err := tc.CreateExecution(context.Background(), "k1", req, 5*time.Second)
+	x, _, err := tc.CreateExecution(context.Background(), "k1", req)
 	if err != nil {
 		t.Fatal(err)
 	}
+	x = poll(t, tc, x.ExecutionID)
 	e := asError(t, client.ExecutionError(x))
 	if e.Code != platform.CodeTimeout || !e.Retryable {
 		t.Errorf("timeout error %+v", e)
@@ -238,7 +240,7 @@ func TestCancel(t *testing.T) {
 	srv.Script(mock.Match{}, mock.Hang().IgnoreTimeout())
 	ctx := context.Background()
 
-	x, resp, err := tc.CreateExecution(ctx, "k1", execRequest("run1"), 0)
+	x, resp, err := tc.CreateExecution(ctx, "k1", execRequest("run1"))
 	if err != nil || !resp.Accepted() {
 		t.Fatalf("create = %+v, %v", resp, err)
 	}
@@ -259,12 +261,13 @@ func TestIdempotentReplay(t *testing.T) {
 	srv, tc := setup(t, mock.Options{Latency: 100 * time.Millisecond}, client.Config{})
 	ctx := context.Background()
 
-	first, resp, err := tc.CreateExecution(ctx, "k1", execRequest("run1"), 0)
+	first, resp, err := tc.CreateExecution(ctx, "k1", execRequest("run1"))
 	if err != nil || !resp.Accepted() {
 		t.Fatalf("first = %+v, %v", resp, err)
 	}
-	// A redelivered River job sends the same key and body.
-	again, resp, err := tc.CreateExecution(ctx, "k1", execRequest("run1"), 5*time.Second)
+	poll(t, tc, first.ExecutionID)
+	// A redelivered River job sends the same key and body, and gets the finished execution.
+	again, resp, err := tc.CreateExecution(ctx, "k1", execRequest("run1"))
 	if err != nil || resp.StatusCode != 200 || again.ExecutionID != first.ExecutionID {
 		t.Fatalf("replay = %+v, %+v, %v", again, resp, err)
 	}
@@ -272,11 +275,11 @@ func TestIdempotentReplay(t *testing.T) {
 		t.Errorf("executions %+v", execs)
 	}
 
-	_, _, err = tc.CreateExecution(ctx, "k1", execRequest("run2"), 0)
+	_, _, err = tc.CreateExecution(ctx, "k1", execRequest("run2"))
 	if e := asError(t, err); e.StatusCode != 409 || e.Code != platform.CodeIdempotencyKeyReused || e.Retryable {
 		t.Errorf("reused key: %+v", e)
 	}
-	if _, _, err := tc.CreateExecution(ctx, "", execRequest("run1"), 0); err == nil {
+	if _, _, err := tc.CreateExecution(ctx, "", execRequest("run1")); err == nil {
 		t.Error("empty idempotency key accepted")
 	}
 }
@@ -308,15 +311,6 @@ func TestRequestTimeoutIsRetryable(t *testing.T) {
 	}
 }
 
-func TestWaitExtendsRequestTimeout(t *testing.T) {
-	// Timeout is 50ms, but a call that waits is bounded by wait + WaitMargin instead.
-	_, tc := setup(t, mock.Options{Latency: 200 * time.Millisecond}, client.Config{Timeout: 50 * time.Millisecond})
-	x, resp, err := tc.CreateExecution(context.Background(), "k1", execRequest("run1"), time.Second)
-	if err != nil || resp.StatusCode != 200 || x.Status != platform.ExecutionSucceeded {
-		t.Fatalf("create = %+v, %+v, %v", x, resp, err)
-	}
-}
-
 func TestCallerCancelIsNotRetryable(t *testing.T) {
 	_, tc := setup(t, mock.Options{}, client.Config{})
 	ctx, cancel := context.WithCancel(context.Background())
@@ -329,7 +323,7 @@ func TestCallerCancelIsNotRetryable(t *testing.T) {
 
 func TestPollFailureIsRetryable(t *testing.T) {
 	srv, tc := setup(t, mock.Options{}, client.Config{})
-	x, _, err := tc.CreateExecution(context.Background(), "k1", execRequest("run1"), 5*time.Second)
+	x, _, err := tc.CreateExecution(context.Background(), "k1", execRequest("run1"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -345,7 +339,7 @@ func TestPollFailureIsRetryable(t *testing.T) {
 func TestTraceWithBasePath(t *testing.T) {
 	_, tc := setup(t, mock.Options{BasePath: "/v1"}, client.Config{})
 	ctx := context.Background()
-	x, _, err := tc.CreateExecution(ctx, "k1", execRequest("run1"), 5*time.Second)
+	x, _, err := tc.CreateExecution(ctx, "k1", execRequest("run1"))
 	if err != nil || x.Status != platform.ExecutionSucceeded {
 		t.Fatalf("create = %+v, %v", x, err)
 	}

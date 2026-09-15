@@ -56,10 +56,10 @@ Let Asoar workflows use agents built in the separate **agent platform service**.
 - `GET /agents/{id}/versions/{v}`: the full contract. Schema is in `agent-version-contract.schema.json`.
 
 **Runtime:**
-- `POST /executions`: start an execution. Hybrid sync/async via `Prefer: wait=N`: returns 200 with the output if it finishes within the window, otherwise 202 with an `execution_id`.
-  - Request body: `agent_id`, `agent_version`, `input`, `context` (tenant_id, workflow_id@version, run_id, node_path), `timeout_ms`, optional `callback_url`.
-  - Response: `output`, `usage` (tokens, cost), `model`, `latency_ms`, `trace_id`.
-- `GET /executions/{id}`: status and result, used for polling.
+- `POST /executions`: start an execution. Asynchronous: it never holds the request open, and returns 202 with an `execution_id` and `Location`. It returns 200 only if the execution is already terminal, such as an idempotent replay of a finished execution.
+  - Request body: `agent_id`, `agent_version`, `input`, `context` (tenant_id, workflow_id@version, run_id, node_path), `timeout_ms`.
+  - Response: `execution_id`, `status`, `agent_id`, `agent_version`, `output` or `error`, `trace_id`. No usage, model, latency, or timestamps.
+- `GET /executions/{id}`: status and result, short-polled at an interval Asoar chooses.
 - `POST /executions/{id}/cancel`: called when an Asoar run is cancelled or its deadline expires.
 - `GET /executions/{id}/trace`: optional, for the runs view.
 
@@ -68,16 +68,16 @@ Let Asoar workflows use agents built in the separate **agent platform service**.
 - **Output validation:** the platform guarantees output conforms to the output schema, using structured output plus an internal repair loop. Asoar re-validates as defense in depth.
 - **Error body:** includes `code`, `message`, and an explicit `retryable: true/false`.
   - Non-retryable: `INPUT_SCHEMA_INVALID`, `OUTPUT_SCHEMA_VIOLATION`, `AGENT_VERSION_NOT_FOUND`, `AGENT_VERSION_DISABLED`.
-  - Retryable, with `retry_after`: `PROVIDER_RATE_LIMITED`, `PROVIDER_UNAVAILABLE`, `TIMEOUT`, `QUOTA_EXCEEDED`.
+  - Retryable: `PROVIDER_RATE_LIMITED`, `PROVIDER_UNAVAILABLE`, `TIMEOUT`, `QUOTA_EXCEEDED`. A 429 or 503 rejection carries a `Retry-After` header; failed executions carry no wait, so the node's `backoff` decides.
 - **Rate limits:** the platform returns rate-limit headers so Asoar can throttle its queue.
-- **Journal:** store `execution_id`, `trace_id`, and usage in the event journal.
+- **Journal:** store `execution_id` and `trace_id` in the event journal.
 
 ### Execution semantics
 
-- **Async strategy:** start with polling. The River job submits, gets a 202, then snoozes and polls. Webhook callbacks, where the node parks in a waiting state and the webhook enqueues the continuation, come later.
+- **Async strategy:** async short polling, with no webhooks and no long-held requests. The River job submits, gets a 202, then snoozes and polls `GET /executions/{id}` until the execution is terminal. The platform sends no poll hint, so Asoar owns the interval: back off, for example from 1s doubling to a 10s cap, and slow down further when the `RateLimit-*` headers run low.
 - **Per-node `execution_policy`:** `timeout_ms`, `max_attempts`, `backoff` (exponential or fixed), and `on_error` (`fail`, `continue`, or `route`). It is frozen with the workflow version.
 - **Contract limits:** the agent contract provides `default_timeout_ms`, `max_timeout_ms`, and `recommended_max_attempts`. The designer pre-fills from these and rejects values above the max, and the publish validator checks again.
-- **Timeout:** `timeout_ms` is sent in the execution request. Asoar's own deadline is slightly longer to allow for polling delay. When Asoar's deadline expires, it calls cancel.
+- **Timeout:** `timeout_ms` is sent in the execution request. Asoar's own deadline is slightly longer to allow for the poll interval. When Asoar's deadline expires, it calls cancel.
 - **Retries:** only `retryable: true` errors consume further attempts. Non-retryable errors cancel the River job and go straight to on-error handling.
 - **Retry layering:** the platform absorbs transient provider errors internally. Asoar retries only on terminal retryable failures. Asoar's default `max_attempts` is 2, which avoids multiplied retries (for example 3 × 3 = 9 LLM calls).
 - **`on_error` behavior:**
@@ -109,7 +109,8 @@ Let Asoar workflows use agents built in the separate **agent platform service**.
 | Idempotency key without `attempt` | Deliberate retries would return the old failed execution. |
 | Trusting the draft's contract snapshot at publish | The snapshot can be stale. The platform is the source of truth. |
 | Retrying all errors | Schema errors fail identically every time and just burn attempts. |
-| Webhook-first async | Deferred, not rejected. Polling via River snooze is simpler to ship first. |
+| Completion webhooks (`callback_url`) | Short polling via River snooze needs no inbound endpoint, callback auth, or park-and-resume path, and a missed delivery would still need polling as a fallback. |
+| Long-held create (`Prefer: wait=N`) | Holds a worker and a connection open per execution and creates a second result path (200 inline vs 202). Short polling gives one code path. |
 | A separate `/test` endpoint | Agents are tested in the platform own tooling. Cost: a workflow author cannot trial an agent against captured upstream node output before publishing, which the platform tooling cannot do because it has no access to a run intermediate data. Re-adding it later is additive. |
 | A separate `/validate` endpoint | No caller. The designer validates locally from the contract snapshot, and both test and execute already reject bad input with `INPUT_SCHEMA_INVALID` before any model call, so a pre-flight check costs a round trip and saves nothing. Revisit if platform-side admission ever grows beyond schema checks. |
 
@@ -128,7 +129,7 @@ Let Asoar workflows use agents built in the separate **agent platform service**.
 2. **Integration model:** should the agent platform be modeled as an Asoar integration entity (endpoint plus auth), with agents as dynamically discovered actions, or stay a separate concept?
 3. **Binding syntax:** the schemas use a placeholder `{ "ref": "$nodes.x.output.y" } | { "literal": ... }` form. Align it with `docs/workflow-schema.json`.
 4. **Service auth:** OAuth client credentials or a scoped API key? What is the tenant model between the two services?
-5. **Webhook timing:** when should `execution.completed/failed` and `agent.version.published/deprecated` webhooks be added? Catalog cache invalidation depends on the latter.
+5. **Lifecycle webhooks:** when should `agent.version.published/deprecated` webhooks be added? Catalog cache invalidation depends on them. Execution results are short-polled, not delivered by webhook.
 6. **Batch execution:** is a batch endpoint needed for `whileLoop` fan-out over many items?
 7. **Upgrade behavior:** on agent upgrade, should `execution_policy` values that still equal the old defaults move to the new version's defaults?
 8. **Platform status:** which platform endpoints exist today? Confirm the contract with the platform codebase before building against it.
@@ -138,7 +139,7 @@ Let Asoar workflows use agents built in the separate **agent platform service**.
 These live in this repo:
 
 - **`agent-node.schema.json`:** the agent node as stored in workflow JSON. It contains `config` (pin, digest, snapshot), `bindings`, `execution_policy`, `Backoff`, and `NodeError`, plus a full example.
-- **`api/openapi.yaml`:** OpenAPI 3.1 draft of every platform endpoint above, including idempotency, `Prefer: wait`, the error envelope, rate-limit headers, and the planned completion webhook. It references the contract schema by relative path.
+- **`api/openapi.yaml`:** OpenAPI 3.1 draft of every platform endpoint above, including idempotency, 202 plus short polling, the error envelope, and rate-limit headers. It references the contract schema by relative path.
 - **`agent-version-contract.schema.json`:** the platform's `GET /agents/{id}/versions/{v}` response. The `digest` is sha256 over the RFC 8785 canonical JSON of `{input_schema, output_schema, limits}`, and it excludes model details.
 
 Example `execution_policy`:
@@ -165,7 +166,7 @@ Example `execution_policy`:
 ### Step 1: Platform contract and mock server (this repo)
 
 - Review `api/openapi.yaml` against the decisions above and the platform's real routes (open question 8). Fix discrepancies in the spec first, then build the mock from it.
-- Build a mock platform server for development and tests (Go, in-repo). It should support configurable latency, a sync-vs-202 cutoff, and scripted error sequences, and it should honor idempotency keys.
+- Build a mock platform server for development and tests (Go, in-repo). It should support configurable latency and poll interval, and scripted error sequences, and it should honor idempotency keys.
 
 **Done when:** integration tests can simulate success, slow success (202 then poll), retryable failures, non-retryable failures, timeouts, and cancellation.
 
@@ -204,12 +205,12 @@ Example `execution_policy`:
 - Add a River job for agent nodes:
   1. Resolve bindings.
   2. Build the idempotency key from `run_id + node_path + attempt`.
-  3. `POST /executions` with `Prefer: wait`.
-  4. On 202, snooze and poll `GET /executions/{id}`.
+  3. `POST /executions`.
+  4. On 202, snooze with backoff and poll `GET /executions/{id}` until terminal.
   5. Enforce Asoar's deadline, which is slightly longer than `timeout_ms`, and call cancel when it expires.
 - Map `max_attempts` and `backoff` onto River retry. Retryable errors return an error, so River retries with the backoff. Non-retryable errors cancel the job and apply `on_error`.
 - Propagate run cancellation (LISTEN/NOTIFY) to `POST /executions/{id}/cancel`.
-- Re-validate the output against the output schema. Write `run_node_result` keyed by `node_path`. Journal `execution_id`, `trace_id`, usage, and latency.
+- Re-validate the output against the output schema. Write `run_node_result` keyed by `node_path`. Journal `execution_id` and `trace_id`.
 - Implement the `on_error` outcomes: fail the run; write a null output and continue; or write `NodeError` and follow the error edge.
 
 **Done when:** integration tests against the mock pass for each of the following:
@@ -232,6 +233,6 @@ Example `execution_policy`:
 
 ### Step 7: Hardening (later, Asoar repo)
 
-- Webhooks: execution completion to park and resume nodes without polling, and version lifecycle events to invalidate the catalog cache and flag deprecated pins.
-- Cost rollups per workflow run in the runs view, with a deep link to the platform trace.
+- Webhooks: version lifecycle events to invalidate the catalog cache and flag deprecated pins.
+- A deep link from each agent node in the runs view to the platform trace. Cost rollups would need usage, which the execution no longer reports.
 - Revisit open questions 1, 2, 6, and 7.

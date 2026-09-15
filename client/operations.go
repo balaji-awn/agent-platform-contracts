@@ -7,7 +7,6 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/sbalaji6/agent-platform-contracts/platform"
 )
@@ -63,10 +62,10 @@ func (t *TenantClient) GetAgentVersion(ctx context.Context, agentID string, vers
 }
 
 // CreateExecution starts an execution, or replays the one already recorded for idempotencyKey. It
-// waits up to wait (rounded up to whole seconds; zero does not wait) for a terminal state. On 200
-// the execution is terminal, possibly failed (see ExecutionError); on 202 (resp.Accepted) it is still
-// running and the caller polls GetExecution. The request timeout is wait plus Config.WaitMargin.
-func (t *TenantClient) CreateExecution(ctx context.Context, idempotencyKey string, req platform.ExecutionRequest, wait time.Duration) (*platform.Execution, *Response, error) {
+// does not wait for the result. On 202 (resp.Accepted) the execution is queued or running and the
+// caller polls GetExecution at an interval of its choosing; on 200 it was already terminal,
+// possibly failed (see ExecutionError).
+func (t *TenantClient) CreateExecution(ctx context.Context, idempotencyKey string, req platform.ExecutionRequest) (*platform.Execution, *Response, error) {
 	if idempotencyKey == "" {
 		return nil, nil, errors.New("client: idempotency key is required")
 	}
@@ -75,7 +74,6 @@ func (t *TenantClient) CreateExecution(ctx context.Context, idempotencyKey strin
 		path:           "/executions",
 		body:           req,
 		idempotencyKey: idempotencyKey,
-		wait:           wait,
 	})
 }
 

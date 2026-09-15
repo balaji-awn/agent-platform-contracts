@@ -11,15 +11,20 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
-
-	"github.com/sbalaji6/agent-platform-contracts/platform"
 )
 
 // InputValidator checks an execution input against a version's input schema.
 type InputValidator interface {
 	// ValidateInput returns one FieldError per violation, with Path a JSON Pointer into input, or
 	// nil if input is valid. An error means the schema could not be used; the mock answers 500.
-	ValidateInput(schema, input json.RawMessage) ([]platform.FieldError, error)
+	ValidateInput(schema, input json.RawMessage) ([]FieldError, error)
+}
+
+// FieldError is one problem with a request or input. Path is a JSON Pointer. The mock folds these
+// into the error message, since the API's error object has no structured details.
+type FieldError struct {
+	Path    string
+	Message string
 }
 
 // NoValidation accepts every input.
@@ -27,7 +32,7 @@ var NoValidation InputValidator = noValidation{}
 
 type noValidation struct{}
 
-func (noValidation) ValidateInput(json.RawMessage, json.RawMessage) ([]platform.FieldError, error) {
+func (noValidation) ValidateInput(json.RawMessage, json.RawMessage) ([]FieldError, error) {
 	return nil, nil
 }
 
@@ -39,7 +44,7 @@ func (noValidation) ValidateInput(json.RawMessage, json.RawMessage) ([]platform.
 type BasicValidator struct{}
 
 // ValidateInput implements InputValidator.
-func (BasicValidator) ValidateInput(schema, input json.RawMessage) ([]platform.FieldError, error) {
+func (BasicValidator) ValidateInput(schema, input json.RawMessage) ([]FieldError, error) {
 	var sch any
 	if err := json.Unmarshal(schema, &sch); err != nil {
 		return nil, fmt.Errorf("input schema: %w", err)
@@ -50,13 +55,13 @@ func (BasicValidator) ValidateInput(schema, input json.RawMessage) ([]platform.F
 	if err := dec.Decode(&v); err != nil {
 		return nil, fmt.Errorf("input: %w", err)
 	}
-	var errs []platform.FieldError
+	var errs []FieldError
 	check(sch, v, "", &errs)
 	return errs, nil
 }
 
-func check(sch, v any, path string, errs *[]platform.FieldError) {
-	add := func(p, msg string) { *errs = append(*errs, platform.FieldError{Path: p, Message: msg}) }
+func check(sch, v any, path string, errs *[]FieldError) {
+	add := func(p, msg string) { *errs = append(*errs, FieldError{Path: p, Message: msg}) }
 	s, ok := sch.(map[string]any)
 	if !ok {
 		if b, isBool := sch.(bool); isBool && !b {

@@ -33,47 +33,43 @@ func TestDecodeError(t *testing.T) {
 		code       platform.ErrorCode
 		retryable  bool
 		retryAfter time.Duration
-		details    int
 	}{
-		{"non-retryable with details", 400, nil,
+		{"non-retryable, unknown fields ignored", 400, nil,
 			envelope("INPUT_SCHEMA_INVALID", false, `,"details":[{"path":"/alert","message":"is required"}]`),
-			platform.CodeInputSchemaInvalid, false, 0, 1},
-		{"body retry_after_ms wins over header", 429, header("Retry-After", "9"),
-			envelope("QUOTA_EXCEEDED", true, `,"retry_after_ms":1500`),
-			platform.CodeQuotaExceeded, true, 1500 * time.Millisecond, 0},
-		{"body retry_after_ms of zero still wins", 503, header("Retry-After", "9"),
-			envelope("PROVIDER_UNAVAILABLE", true, `,"retry_after_ms":0`),
-			platform.CodeProviderUnavailable, true, 0, 0},
-		{"header seconds without body field", 503, header("Retry-After", "4"),
+			platform.CodeInputSchemaInvalid, false, 0},
+		{"header seconds", 429, header("Retry-After", "4"),
+			envelope("QUOTA_EXCEEDED", true, ""),
+			platform.CodeQuotaExceeded, true, 4 * time.Second},
+		{"no header", 503, nil,
 			envelope("PROVIDER_UNAVAILABLE", true, ""),
-			platform.CodeProviderUnavailable, true, 4 * time.Second, 0},
+			platform.CodeProviderUnavailable, true, 0},
 		{"header HTTP-date", 503, header("Retry-After", now.Add(30*time.Second).Format(http.TimeFormat)),
 			envelope("PROVIDER_UNAVAILABLE", true, ""),
-			platform.CodeProviderUnavailable, true, 30 * time.Second, 0},
+			platform.CodeProviderUnavailable, true, 30 * time.Second},
 		{"flag wins over code", 503, nil,
 			envelope("PROVIDER_UNAVAILABLE", false, ""),
-			platform.CodeProviderUnavailable, false, 0, 0},
+			platform.CodeProviderUnavailable, false, 0},
 		{"unknown code keeps flag", 400, nil,
 			envelope("SOMETHING_NEW", true, ""),
-			"SOMETHING_NEW", true, 0, 0},
+			"SOMETHING_NEW", true, 0},
 		{"conflict", 409, nil,
 			envelope("IDEMPOTENCY_KEY_REUSED", false, ""),
-			platform.CodeIdempotencyKeyReused, false, 0, 0},
+			platform.CodeIdempotencyKeyReused, false, 0},
 		{"HTML 502 from a proxy", 502, nil, `<html><body>Bad Gateway</body></html>`,
-			CodeUnexpectedResponse, true, 0, 0},
+			CodeUnexpectedResponse, true, 0},
 		{"empty 429 with header", 429, header("Retry-After", "2"), ``,
-			CodeUnexpectedResponse, true, 2 * time.Second, 0},
+			CodeUnexpectedResponse, true, 2 * time.Second},
 		{"plain-text 404", 404, nil, `404 page not found`,
-			CodeUnexpectedResponse, false, 0, 0},
+			CodeUnexpectedResponse, false, 0},
 		{"envelope without code", 500, nil, `{"error":{}}`,
-			CodeUnexpectedResponse, true, 0, 0},
+			CodeUnexpectedResponse, true, 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			rl := &RateLimit{Limit: 10}
 			e := decodeError(tt.status, tt.header, []byte(tt.body), rl, now)
 			if e.StatusCode != tt.status || e.Code != tt.code || e.Retryable != tt.retryable ||
-				e.RetryAfter != tt.retryAfter || len(e.Details) != tt.details || e.RateLimit != rl {
+				e.RetryAfter != tt.retryAfter || e.RateLimit != rl {
 				t.Errorf("got %+v", e)
 			}
 			if IsRetryable(e) != tt.retryable {
@@ -133,19 +129,18 @@ func TestParseRateLimit(t *testing.T) {
 }
 
 func TestExecutionError(t *testing.T) {
-	ms := int64(2000)
 	failed := &platform.Execution{
 		ExecutionID: "exec_1",
 		Status:      platform.ExecutionFailed,
-		Error:       &platform.Error{Code: platform.CodeTimeout, Message: "slow", Retryable: true, RetryAfterMs: &ms},
+		Error:       &platform.Error{Code: platform.CodeTimeout, Message: "slow", Retryable: true},
 	}
 	err := ExecutionError(failed)
 	var e *Error
-	if !errors.As(err, &e) || e.Code != platform.CodeTimeout || !e.Retryable || e.RetryAfter != 2*time.Second ||
+	if !errors.As(err, &e) || e.Code != platform.CodeTimeout || !e.Retryable || e.RetryAfter != 0 ||
 		e.ExecutionID != "exec_1" || e.StatusCode != 0 {
 		t.Errorf("ExecutionError(failed) = %+v", err)
 	}
-	if got := RetryAfter(fmt.Errorf("wrapped: %w", err)); got != 2*time.Second {
+	if got := RetryAfter(fmt.Errorf("wrapped: %w", &Error{RetryAfter: 2 * time.Second})); got != 2*time.Second {
 		t.Errorf("RetryAfter through wrapping = %v", got)
 	}
 

@@ -24,7 +24,7 @@ Module path: `github.com/sbalaji6/agent-platform-contracts`. Standard library on
 ## Testing against the mock
 
 ```go
-srv := mock.NewTestServer(t, mock.Options{MaxWait: 50 * time.Millisecond})
+srv := mock.NewTestServer(t, mock.Options{})
 srv.AddAgentVersion(mock.AlertTriage())
 srv.Script(mock.Match{AgentID: "alert-triage"},
 	mock.Fail(platform.CodeProviderUnavailable),  // first execution: retryable failure

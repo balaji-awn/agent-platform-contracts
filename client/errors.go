@@ -32,10 +32,9 @@ type Error struct {
 	Code       platform.ErrorCode
 	Message    string
 	Retryable  bool
-	// RetryAfter is the minimum wait before retrying, from retry_after_ms or else the Retry-After
-	// header. Zero if neither was given.
+	// RetryAfter is the minimum wait before retrying, from the Retry-After header of a rejection.
+	// Zero when the header is absent, and always zero for failed executions.
 	RetryAfter time.Duration
-	Details    []platform.FieldError
 	// RateLimit is parsed from the response headers, or nil.
 	RateLimit *RateLimit
 	// ExecutionID is set when the error is the failure of an execution.
@@ -91,22 +90,16 @@ func ExecutionError(x *platform.Execution) error {
 }
 
 func fromPlatform(pe platform.Error) *Error {
-	e := &Error{Code: pe.Code, Message: pe.Message, Retryable: pe.Retryable, Details: pe.Details}
-	if pe.RetryAfterMs != nil {
-		e.RetryAfter = time.Duration(*pe.RetryAfterMs) * time.Millisecond
-	}
-	return e
+	return &Error{Code: pe.Code, Message: pe.Message, Retryable: pe.Retryable}
 }
 
-// decodeError builds the *Error for a non-2xx response. The envelope's retry_after_ms wins over the
-// Retry-After header, as the spec says.
+// decodeError builds the *Error for a non-2xx response, taking RetryAfter from the Retry-After
+// header.
 func decodeError(status int, h http.Header, body []byte, rl *RateLimit, now time.Time) *Error {
 	var env platform.ErrorEnvelope
 	var e *Error
-	bodyRetryAfter := false
 	if json.Unmarshal(body, &env) == nil && env.Error.Code != "" {
 		e = fromPlatform(env.Error)
-		bodyRetryAfter = env.Error.RetryAfterMs != nil
 	} else {
 		e = &Error{
 			Code:      CodeUnexpectedResponse,
@@ -116,10 +109,8 @@ func decodeError(status int, h http.Header, body []byte, rl *RateLimit, now time
 	}
 	e.StatusCode = status
 	e.RateLimit = rl
-	if !bodyRetryAfter {
-		if d, ok := parseRetryAfter(h.Get(platform.HeaderRetryAfter), now); ok {
-			e.RetryAfter = d
-		}
+	if d, ok := parseRetryAfter(h.Get(platform.HeaderRetryAfter), now); ok {
+		e.RetryAfter = d
 	}
 	return e
 }

@@ -29,8 +29,7 @@ type ExecutionRequest struct {
 	Context      ExecutionContext `json:"context"`
 	// TimeoutMs applies per attempt, from execution creation, and must not exceed the version's
 	// max_timeout_ms.
-	TimeoutMs   int64  `json:"timeout_ms"`
-	CallbackURL string `json:"callback_url,omitempty"`
+	TimeoutMs int64 `json:"timeout_ms"`
 }
 
 // ExecutionContext identifies the caller's workflow run and node.
@@ -52,27 +51,8 @@ type Execution struct {
 	// when absent.
 	Output json.RawMessage `json:"output,omitempty"`
 	// Error is set when Status is failed.
-	Error *Error          `json:"error,omitempty"`
-	Usage *Usage          `json:"usage,omitempty"`
-	Model *ExecutionModel `json:"model,omitempty"`
-	// LatencyMs is set once the execution is terminal.
-	LatencyMs  *int64     `json:"latency_ms,omitempty"`
-	TraceID    string     `json:"trace_id,omitempty"`
-	CreatedAt  time.Time  `json:"created_at"`
-	FinishedAt *time.Time `json:"finished_at"`
-}
-
-// ExecutionModel is the model that ran an execution.
-type ExecutionModel struct {
-	Provider string `json:"provider,omitempty"`
-	Name     string `json:"name,omitempty"`
-}
-
-// Usage is the token and cost usage of an execution.
-type Usage struct {
-	InputTokens  int64   `json:"input_tokens"`
-	OutputTokens int64   `json:"output_tokens"`
-	CostUSD      float64 `json:"cost_usd"`
+	Error   *Error `json:"error,omitempty"`
+	TraceID string `json:"trace_id,omitempty"`
 }
 
 // ExecutionTrace is the body of getExecutionTrace.

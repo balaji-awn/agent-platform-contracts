@@ -75,20 +75,14 @@ func Codes() []ErrorCode {
 
 // Error is the error object of an ErrorEnvelope or of a failed Execution.
 type Error struct {
-	Code         ErrorCode    `json:"code"`
-	Message      string       `json:"message"`
-	Retryable    bool         `json:"retryable"`
-	RetryAfterMs *int64       `json:"retry_after_ms,omitempty"`
-	Details      []FieldError `json:"details,omitempty"`
+	Code ErrorCode `json:"code"`
+	// Message is human-readable. For validation errors it names each offending field by JSON
+	// Pointer. Never parse it.
+	Message   string `json:"message"`
+	Retryable bool   `json:"retryable"`
 }
 
 // ErrorEnvelope is the body of every request-level rejection.
 type ErrorEnvelope struct {
 	Error Error `json:"error"`
-}
-
-// FieldError points at one problem in a request. Path is a JSON Pointer.
-type FieldError struct {
-	Path    string `json:"path"`
-	Message string `json:"message"`
 }

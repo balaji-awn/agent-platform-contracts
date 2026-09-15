@@ -129,9 +129,9 @@ func wantError(t *testing.T, resp *http.Response, body []byte, status int, code 
 	return env.Error
 }
 
-func TestSyncSuccess(t *testing.T) {
+func TestInstantSuccess(t *testing.T) {
 	h := newHarness(t, mock.Options{})
-	resp, body := h.create("k1", execBody("run1"), platform.HeaderPrefer, "wait=5")
+	resp, body := h.create("k1", execBody("run1"))
 	wantStatus(t, resp, body, http.StatusOK)
 	x := decode[platform.Execution](t, body)
 	if x.Status != platform.ExecutionSucceeded {
@@ -140,11 +140,8 @@ func TestSyncSuccess(t *testing.T) {
 	if got, want := string(x.Output), `{"severity":"high","verdict":"suspicious","reasoning":"Mock verdict."}`; got != want {
 		t.Errorf("output %s, want %s", got, want)
 	}
-	if x.Usage == nil || x.LatencyMs == nil || x.FinishedAt == nil || x.Model == nil || x.TraceID == "" {
+	if x.TraceID == "" {
 		t.Errorf("incomplete execution: %s", body)
-	}
-	if got := resp.Header.Get(platform.HeaderPreferenceApplied); got != "wait=5" {
-		t.Errorf("Preference-Applied %q, want wait=5", got)
 	}
 	for _, name := range []string{platform.HeaderRateLimitLimit, platform.HeaderRateLimitRemaining, platform.HeaderRateLimitReset} {
 		if resp.Header.Get(name) == "" {
@@ -154,20 +151,17 @@ func TestSyncSuccess(t *testing.T) {
 }
 
 func TestSlowSuccessAcceptedThenPoll(t *testing.T) {
-	h := newHarness(t, mock.Options{MaxWait: 20 * time.Millisecond})
+	h := newHarness(t, mock.Options{})
 	h.srv.Script(mock.Match{}, mock.Succeed(map[string]string{"severity": "low", "verdict": "benign"}).After(150*time.Millisecond))
 
-	resp, body := h.create("k1", execBody("run1"), platform.HeaderPrefer, "wait=10")
+	resp, body := h.create("k1", execBody("run1"))
 	wantStatus(t, resp, body, http.StatusAccepted)
 	x := decode[platform.Execution](t, body)
-	if x.Status != platform.ExecutionRunning || x.FinishedAt != nil {
+	if x.Status != platform.ExecutionRunning || x.Output != nil {
 		t.Fatalf("accepted execution: %s", body)
 	}
 	if got := resp.Header.Get("Location"); got != "/executions/"+x.ExecutionID {
 		t.Errorf("Location %q", got)
-	}
-	if got := resp.Header.Get(platform.HeaderPreferenceApplied); got != "wait=0" {
-		t.Errorf("Preference-Applied %q, want wait=0 after the 20ms cap", got)
 	}
 
 	final := h.poll(x.ExecutionID)
@@ -176,35 +170,38 @@ func TestSlowSuccessAcceptedThenPoll(t *testing.T) {
 	}
 }
 
-func TestNoPreferDoesNotWait(t *testing.T) {
-	h := newHarness(t, mock.Options{Latency: 100 * time.Millisecond})
-	resp, body := h.create("k1", execBody("run1"))
+// A Prefer: wait preference from an older client is ignored: createExecution never holds the request.
+func TestCreateDoesNotWait(t *testing.T) {
+	h := newHarness(t, mock.Options{Latency: 500 * time.Millisecond})
+	start := time.Now()
+	resp, body := h.create("k1", execBody("run1"), "Prefer", "wait=5")
 	wantStatus(t, resp, body, http.StatusAccepted)
-	if resp.Header.Get(platform.HeaderPreferenceApplied) != "" {
-		t.Error("Preference-Applied sent without Prefer")
+	if elapsed := time.Since(start); elapsed > 250*time.Millisecond {
+		t.Errorf("createExecution took %v", elapsed)
+	}
+	if got := resp.Header.Get("Preference-Applied"); got != "" {
+		t.Errorf("Preference-Applied %q", got)
 	}
 }
 
 func TestExecutionLevelFailures(t *testing.T) {
-	ms := func(n int64) *int64 { return &n }
 	tests := []struct {
-		name       string
-		outcome    mock.Outcome
-		code       platform.ErrorCode
-		retryable  bool
-		retryAfter *int64
-		message    string
+		name      string
+		outcome   mock.Outcome
+		code      platform.ErrorCode
+		retryable bool
+		message   string
 	}{
-		{"retryable", mock.Fail(platform.CodeProviderUnavailable), platform.CodeProviderUnavailable, true, ms(1000), "mock: PROVIDER_UNAVAILABLE"},
-		{"non-retryable", mock.Fail(platform.CodeOutputSchemaViolation), platform.CodeOutputSchemaViolation, false, nil, "mock: OUTPUT_SCHEMA_VIOLATION"},
-		{"overrides", mock.Fail(platform.CodeProviderRateLimited).WithRetryAfter(5 * time.Second).WithMessage("slow down"), platform.CodeProviderRateLimited, true, ms(5000), "slow down"},
-		{"flag override", mock.Fail(platform.CodeInternal).WithRetryable(false), platform.CodeInternal, false, nil, "mock: INTERNAL"},
+		{"retryable", mock.Fail(platform.CodeProviderUnavailable), platform.CodeProviderUnavailable, true, "mock: PROVIDER_UNAVAILABLE"},
+		{"non-retryable", mock.Fail(platform.CodeOutputSchemaViolation), platform.CodeOutputSchemaViolation, false, "mock: OUTPUT_SCHEMA_VIOLATION"},
+		{"message override", mock.Fail(platform.CodeProviderRateLimited).WithMessage("slow down"), platform.CodeProviderRateLimited, true, "slow down"},
+		{"flag override", mock.Fail(platform.CodeInternal).WithRetryable(false), platform.CodeInternal, false, "mock: INTERNAL"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			h := newHarness(t, mock.Options{})
 			h.srv.Script(mock.Match{}, tt.outcome)
-			resp, body := h.create("k1", execBody("run1"), platform.HeaderPrefer, "wait=5")
+			resp, body := h.create("k1", execBody("run1"))
 			wantStatus(t, resp, body, http.StatusOK)
 			x := decode[platform.Execution](t, body)
 			if x.Status != platform.ExecutionFailed || x.Error == nil || x.Output != nil {
@@ -214,8 +211,8 @@ func TestExecutionLevelFailures(t *testing.T) {
 			if e.Code != tt.code || e.Retryable != tt.retryable || e.Message != tt.message {
 				t.Errorf("error %+v", e)
 			}
-			if (e.RetryAfterMs == nil) != (tt.retryAfter == nil) || (e.RetryAfterMs != nil && *e.RetryAfterMs != *tt.retryAfter) {
-				t.Errorf("retry_after_ms %v, want %v", e.RetryAfterMs, tt.retryAfter)
+			if got := resp.Header.Get(platform.HeaderRetryAfter); got != "" {
+				t.Errorf("Retry-After %q on a failed execution", got)
 			}
 		})
 	}
@@ -225,9 +222,9 @@ func TestRetryableRejectionDoesNotRecordKey(t *testing.T) {
 	h := newHarness(t, mock.Options{})
 	h.srv.Script(mock.Match{}, mock.Reject(platform.CodeQuotaExceeded).WithRetryAfter(2500*time.Millisecond))
 
-	resp, body := h.create("k1", execBody("run1"), platform.HeaderPrefer, "wait=5")
+	resp, body := h.create("k1", execBody("run1"))
 	e := wantError(t, resp, body, http.StatusTooManyRequests, platform.CodeQuotaExceeded)
-	if !e.Retryable || e.RetryAfterMs == nil || *e.RetryAfterMs != 2500 {
+	if !e.Retryable {
 		t.Errorf("error %+v", e)
 	}
 	if got := resp.Header.Get(platform.HeaderRetryAfter); got != "3" {
@@ -237,7 +234,7 @@ func TestRetryableRejectionDoesNotRecordKey(t *testing.T) {
 		t.Fatalf("%d executions after a rejection, want 0", n)
 	}
 
-	resp, body = h.create("k1", execBody("run1"), platform.HeaderPrefer, "wait=5")
+	resp, body = h.create("k1", execBody("run1"))
 	wantStatus(t, resp, body, http.StatusOK)
 	if n := len(h.srv.Executions()); n != 1 {
 		t.Errorf("%d executions, want 1", n)
@@ -302,8 +299,8 @@ func TestNonRetryableRejections(t *testing.T) {
 			if e.Retryable {
 				t.Error("retryable = true, want false")
 			}
-			if tt.detail != "" && (len(e.Details) == 0 || e.Details[0].Path != tt.detail) {
-				t.Errorf("details %+v, want path %s", e.Details, tt.detail)
+			if tt.detail != "" && !strings.Contains(e.Message, tt.detail) {
+				t.Errorf("message %q, want it to name %s", e.Message, tt.detail)
 			}
 			if n := len(h.srv.Executions()); n != 0 {
 				t.Errorf("%d executions, want 0", n)
@@ -327,11 +324,11 @@ func TestTimeout(t *testing.T) {
 			b := execBody("run1")
 			b["timeout_ms"] = 1000 // 10ms after scaling
 			start := time.Now()
-			resp, body := h.create("k1", b, platform.HeaderPrefer, "wait=5")
-			wantStatus(t, resp, body, http.StatusOK)
-			x := decode[platform.Execution](t, body)
+			resp, body := h.create("k1", b)
+			wantStatus(t, resp, body, http.StatusAccepted)
+			x := h.poll(decode[platform.Execution](t, body).ExecutionID)
 			if x.Status != platform.ExecutionFailed || x.Error == nil || x.Error.Code != platform.CodeTimeout || !x.Error.Retryable {
-				t.Fatalf("execution: %s", body)
+				t.Fatalf("execution: %+v", x)
 			}
 			if elapsed := time.Since(start); elapsed > 2*time.Second {
 				t.Errorf("took %v", elapsed)
@@ -350,7 +347,7 @@ func TestCancel(t *testing.T) {
 	for i := 0; i < 2; i++ {
 		resp, body = h.do(http.MethodPost, "/executions/"+id+"/cancel", nil)
 		wantStatus(t, resp, body, http.StatusAccepted)
-		if x := decode[platform.Execution](t, body); x.Status != platform.ExecutionCancelled || x.Error != nil || x.FinishedAt == nil {
+		if x := decode[platform.Execution](t, body); x.Status != platform.ExecutionCancelled || x.Error != nil {
 			t.Fatalf("cancel %d: %s", i, body)
 		}
 	}
@@ -370,7 +367,7 @@ func TestCancel(t *testing.T) {
 
 func TestCancelFinishedIsUnchanged(t *testing.T) {
 	h := newHarness(t, mock.Options{})
-	resp, body := h.create("k1", execBody("run1"), platform.HeaderPrefer, "wait=5")
+	resp, body := h.create("k1", execBody("run1"))
 	wantStatus(t, resp, body, http.StatusOK)
 	id := decode[platform.Execution](t, body).ExecutionID
 	resp, body = h.do(http.MethodPost, "/executions/"+id+"/cancel", nil)
@@ -389,9 +386,10 @@ func TestIdempotency(t *testing.T) {
 	resp, data := h.create("k1", body)
 	wantStatus(t, resp, data, http.StatusAccepted)
 	first := decode[platform.Execution](t, data)
+	h.poll(first.ExecutionID)
 
 	// A redelivered job sends the same key and the same JSON value, and gets the same execution.
-	resp, data = h.create("k1", reordered, platform.HeaderPrefer, "wait=5")
+	resp, data = h.create("k1", reordered)
 	wantStatus(t, resp, data, http.StatusOK)
 	if x := decode[platform.Execution](t, data); x.ExecutionID != first.ExecutionID || x.Status != platform.ExecutionSucceeded {
 		t.Fatalf("replay returned %s", data)
@@ -420,7 +418,7 @@ func TestIdempotency(t *testing.T) {
 
 func TestReplayAfterDisable(t *testing.T) {
 	h := newHarness(t, mock.Options{})
-	resp, body := h.create("k1", execBody("run1"), platform.HeaderPrefer, "wait=5")
+	resp, body := h.create("k1", execBody("run1"))
 	wantStatus(t, resp, body, http.StatusOK)
 	id := decode[platform.Execution](t, body).ExecutionID
 
@@ -467,7 +465,7 @@ func TestScriptMatching(t *testing.T) {
 	)
 	codes := []platform.ErrorCode{platform.CodeProviderUnavailable, platform.CodeTimeout, ""}
 	for i, want := range codes {
-		resp, body := h.create("k"+string(rune('1'+i)), execBody("run1"), platform.HeaderPrefer, "wait=5")
+		resp, body := h.create("k"+string(rune('1'+i)), execBody("run1"))
 		wantStatus(t, resp, body, http.StatusOK)
 		x := decode[platform.Execution](t, body)
 		var got platform.ErrorCode
@@ -625,7 +623,7 @@ func TestRateLimit(t *testing.T) {
 	}
 	resp, body := h.do(http.MethodGet, "/agents", nil)
 	e := wantError(t, resp, body, http.StatusTooManyRequests, platform.CodeQuotaExceeded)
-	if !e.Retryable || e.RetryAfterMs == nil || resp.Header.Get(platform.HeaderRetryAfter) == "" {
+	if !e.Retryable || resp.Header.Get(platform.HeaderRetryAfter) == "" {
 		t.Errorf("rate-limited response %s, Retry-After %q", body, resp.Header.Get(platform.HeaderRetryAfter))
 	}
 	if got := resp.Header.Get(platform.HeaderRateLimitLimit); got != "2" {
@@ -635,7 +633,7 @@ func TestRateLimit(t *testing.T) {
 
 func TestFailRequests(t *testing.T) {
 	h := newHarness(t, mock.Options{})
-	resp, body := h.create("k1", execBody("run1"), platform.HeaderPrefer, "wait=5")
+	resp, body := h.create("k1", execBody("run1"))
 	wantStatus(t, resp, body, http.StatusOK)
 	id := decode[platform.Execution](t, body).ExecutionID
 
@@ -670,33 +668,9 @@ func TestBasePath(t *testing.T) {
 	h.poll(id)
 }
 
-func TestPreferParsing(t *testing.T) {
-	tests := []struct {
-		prefer, applied string
-		status          int
-	}{
-		{"respond-async, wait=2", "wait=2", http.StatusOK},
-		{"WAIT=2", "wait=2", http.StatusOK},
-		{`wait="2"; x=y`, "wait=2", http.StatusOK},
-		{"wait=30", "wait=3", http.StatusOK}, // capped by MaxWait
-		{"wait=abc", "", http.StatusAccepted},
-		{"respond-async", "", http.StatusAccepted},
-	}
-	for _, tt := range tests {
-		t.Run(tt.prefer, func(t *testing.T) {
-			h := newHarness(t, mock.Options{Latency: 50 * time.Millisecond, MaxWait: 3 * time.Second})
-			resp, body := h.create("k1", execBody("run1"), platform.HeaderPrefer, tt.prefer)
-			wantStatus(t, resp, body, tt.status)
-			if got := resp.Header.Get(platform.HeaderPreferenceApplied); got != tt.applied {
-				t.Errorf("Preference-Applied %q, want %q", got, tt.applied)
-			}
-		})
-	}
-}
-
 func TestTrace(t *testing.T) {
 	h := newHarness(t, mock.Options{})
-	resp, body := h.create("k1", execBody("run1"), platform.HeaderPrefer, "wait=5")
+	resp, body := h.create("k1", execBody("run1"))
 	wantStatus(t, resp, body, http.StatusOK)
 	id := decode[platform.Execution](t, body).ExecutionID
 	resp, body = h.do(http.MethodGet, "/executions/"+id+"/trace", nil)

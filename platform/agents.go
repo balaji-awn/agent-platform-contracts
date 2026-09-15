@@ -11,8 +11,6 @@ import (
 const (
 	HeaderTenantID           = "X-Tenant-ID"
 	HeaderIdempotencyKey     = "Idempotency-Key"
-	HeaderPrefer             = "Prefer"
-	HeaderPreferenceApplied  = "Preference-Applied"
 	HeaderRetryAfter         = "Retry-After"
 	HeaderRateLimitLimit     = "RateLimit-Limit"
 	HeaderRateLimitRemaining = "RateLimit-Remaining"

@@ -1,7 +1,7 @@
 // Command mockplatform serves the mock agent platform for local development, for example behind
 // Asoar's backend while working on the designer.
 //
-//	go run ./cmd/mockplatform -addr 127.0.0.1:8090 -base-path /v1 -latency 2s -max-wait 1s
+//	go run ./cmd/mockplatform -addr 127.0.0.1:8090 -base-path /v1 -latency 2s
 //
 // It seeds alert-triage@3 (mock.AlertTriage) plus any versions in the -seed file, a JSON array of
 // agent version contracts, each with an optional "default_output". Every execution succeeds with
@@ -24,11 +24,10 @@ func main() {
 	basePath := flag.String("base-path", "/v1", "path prefix of the API")
 	token := flag.String("token", "", "bearer token to require; empty accepts any request")
 	latency := flag.Duration("latency", 500*time.Millisecond, "how long each execution runs")
-	maxWait := flag.Duration("max-wait", 60*time.Second, "cap on the Prefer: wait window")
 	seed := flag.String("seed", "", "JSON file with an array of agent versions to add")
 	flag.Parse()
 
-	srv := mock.New(mock.Options{Token: *token, BasePath: *basePath, Latency: *latency, MaxWait: *maxWait})
+	srv := mock.New(mock.Options{Token: *token, BasePath: *basePath, Latency: *latency})
 	if err := srv.AddAgentVersion(mock.AlertTriage()); err != nil {
 		log.Fatal(err)
 	}

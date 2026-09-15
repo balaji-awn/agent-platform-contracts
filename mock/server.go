@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -26,9 +27,6 @@ type Options struct {
 	// Latency is how long an execution runs when its outcome sets no delay. Zero finishes
 	// executions immediately.
 	Latency time.Duration
-	// MaxWait caps the Prefer: wait window. It is the sync-vs-202 cutoff: an execution that runs
-	// longer than min(requested wait, MaxWait) gets a 202. Default 60s.
-	MaxWait time.Duration
 	// TimeoutScale multiplies timeout_ms before the mock enforces it, so tests can hit TIMEOUT
 	// without waiting a full second (timeout_ms is at least 1000). Default 1.
 	TimeoutScale float64
@@ -101,9 +99,6 @@ type Server struct {
 
 // New returns a Server with an empty catalog.
 func New(opts Options) *Server {
-	if opts.MaxWait <= 0 {
-		opts.MaxWait = 60 * time.Second
-	}
 	if opts.TimeoutScale <= 0 {
 		opts.TimeoutScale = 1
 	}
@@ -156,8 +151,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.mux.ServeHTTP(w, r)
 }
 
-// Close stops pending executions, releases requests waiting on Prefer: wait, and stops the
-// httptest server if NewTestServer started one. It is safe to call more than once.
+// Close stops pending executions, releases delayed responses, and stops the httptest server if
+// NewTestServer started one. It is safe to call more than once.
 func (s *Server) Close() {
 	s.mu.Lock()
 	if s.closed {
@@ -255,8 +250,7 @@ func (s *Server) rateLimitHeaders(w http.ResponseWriter) *rejection {
 		return nil
 	}
 	rej := errorFor(platform.CodeQuotaExceeded, "request rate limit exceeded")
-	ms := reset.Milliseconds()
-	rej.body.RetryAfterMs = &ms
+	rej.retryAfter = reset
 	return &rej
 }
 
@@ -279,11 +273,14 @@ func (s *Server) sleep(r *http.Request, d time.Duration) bool {
 
 // rejection is a request-level error response.
 type rejection struct {
-	status int
-	body   platform.Error
+	status     int
+	body       platform.Error
+	retryAfter time.Duration // sent as Retry-After, rounded up to whole seconds, when positive
 }
 
-func errorFor(code platform.ErrorCode, msg string, details ...platform.FieldError) rejection {
+// errorFor builds a rejection. Field problems are folded into the message, since the error object
+// has no structured details.
+func errorFor(code platform.ErrorCode, msg string, problems ...FieldError) rejection {
 	info, ok := code.Info()
 	status := info.HTTPStatus
 	if !ok || status == 0 {
@@ -291,15 +288,27 @@ func errorFor(code platform.ErrorCode, msg string, details ...platform.FieldErro
 	}
 	return rejection{status: status, body: platform.Error{
 		Code:      code,
-		Message:   msg,
+		Message:   withProblems(msg, problems),
 		Retryable: info.Retryable,
-		Details:   details,
 	}}
 }
 
+// withProblems appends field problems to msg, e.g. "invalid request body: /timeout_ms must be at
+// least 1000; /context/run_id is required".
+func withProblems(msg string, problems []FieldError) string {
+	if len(problems) == 0 {
+		return msg
+	}
+	parts := make([]string, len(problems))
+	for i, p := range problems {
+		parts[i] = strings.TrimSpace(p.Path + " " + p.Message)
+	}
+	return msg + ": " + strings.Join(parts, "; ")
+}
+
 func writeError(w http.ResponseWriter, rej rejection) {
-	if rej.body.RetryAfterMs != nil {
-		w.Header().Set(platform.HeaderRetryAfter, strconv.Itoa(ceilSeconds(time.Duration(*rej.body.RetryAfterMs)*time.Millisecond)))
+	if rej.retryAfter > 0 {
+		w.Header().Set(platform.HeaderRetryAfter, strconv.Itoa(ceilSeconds(rej.retryAfter)))
 	}
 	writeJSON(w, rej.status, platform.ErrorEnvelope{Error: rej.body})
 }

@@ -3,7 +3,7 @@
 //
 // Start one per test, seed the catalog, and script what executions do:
 //
-//	srv := mock.NewTestServer(t, mock.Options{MaxWait: 50 * time.Millisecond})
+//	srv := mock.NewTestServer(t, mock.Options{})
 //	if err := srv.AddAgentVersion(mock.AlertTriage()); err != nil {
 //		t.Fatal(err)
 //	}
@@ -15,9 +15,10 @@
 //
 // Outcomes cover the scenarios of Step 1 in docs/design/agent-nodes.md:
 //
-//   - success: the default, or Succeed. Finishing within the Prefer: wait window returns 200.
-//   - slow success: Succeed(...).After(d) with d longer than the wait window returns 202, and
-//     getExecution returns the result once d elapses. Options.MaxWait caps the window.
+//   - success: the default, or Succeed. createExecution never waits: with zero latency the
+//     execution is already terminal and returns 200.
+//   - slow success: Succeed(...).After(d), or Options.Latency, returns 202 with Location, and
+//     getExecution returns the result once d elapses.
 //   - retryable and non-retryable failures: Fail for execution-level failures (200 with status
 //     failed), Reject for request-level rejections (non-2xx, no execution created).
 //   - timeouts: Hang (or a delay past timeout_ms) fails the execution with TIMEOUT when timeout_ms

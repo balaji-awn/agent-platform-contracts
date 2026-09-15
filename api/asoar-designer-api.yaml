@@ -296,15 +296,6 @@ components:
             stores it on the node so publish can detect drift.
         published_at: { type: string, format: date-time }
 
-    FieldError:
-      type: object
-      required: [path, message]
-      properties:
-        path:
-          type: string
-          description: JSON Pointer into the offending request field, e.g. /limit.
-        message: { type: string }
-
     ErrorEnvelope:
       type: object
       required: [error]
@@ -326,7 +317,7 @@ components:
         | REQUEST_INVALID | 400 | The designer sent something malformed, such as a bad cursor or limit. A bug, not an author error. | 400 REQUEST_INVALID |
         | AGENT_NOT_FOUND | 404 | The agent no longer exists or is not visible to this tenant. | 404 AGENT_NOT_FOUND |
         | AGENT_VERSION_NOT_FOUND | 404 | The pinned version is gone. The node needs repinning. | 404 AGENT_VERSION_NOT_FOUND |
-        | PLATFORM_RATE_LIMITED | 429 | Too many calls right now. Retry after `retry_after_ms`. | 429 |
+        | PLATFORM_RATE_LIMITED | 429 | Too many calls right now. Retry after the `Retry-After` header. | 429 |
         | PLATFORM_UNAVAILABLE | 503 | The platform is unreachable or failing. Retry later. | 503, 5xx, transport failure |
         | PLATFORM_MISCONFIGURED | 502 | Asoar's platform credential is missing, invalid, or refused. An operator problem, so it must not be shown as an author error. | 401, 403 |
         | INTERNAL | 500 | Anything else. | - |
@@ -349,11 +340,3 @@ components:
           type: boolean
           default: false
           description: Whether trying the same request again can succeed.
-        retry_after_ms:
-          type: integer
-          minimum: 0
-          description: Minimum wait before retrying, when retryable.
-        details:
-          type: array
-          description: Field-level problems, for pointing at the offending request field.
-          items: { $ref: '#/components/schemas/FieldError' }

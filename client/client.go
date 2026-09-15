@@ -2,10 +2,10 @@
 //
 //	c, err := client.New(client.Config{BaseURL: "https://agent-platform.internal/v1", Token: client.StaticToken(token)})
 //	tc := c.Tenant(tenantID)
-//	x, resp, err := tc.CreateExecution(ctx, idempotencyKey, req, 20*time.Second)
+//	x, resp, err := tc.CreateExecution(ctx, idempotencyKey, req)
 //	switch {
 //	case err != nil:                    // request-level rejection or transport failure; see IsRetryable
-//	case resp.Accepted():               // still running; poll tc.GetExecution(ctx, x.ExecutionID)
+//	case resp.Accepted():               // running; poll tc.GetExecution(ctx, x.ExecutionID)
 //	case client.ExecutionError(x) != nil: // the execution failed; same *Error type as rejections
 //	}
 //
@@ -22,7 +22,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"net/http"
 	"net/url"
 	"strings"
@@ -32,10 +31,8 @@ import (
 )
 
 const (
-	// DefaultTimeout bounds requests that do not wait for an execution.
+	// DefaultTimeout bounds each request.
 	DefaultTimeout = 30 * time.Second
-	// DefaultWaitMargin is added to the Prefer: wait window to bound requests that wait.
-	DefaultWaitMargin = 5 * time.Second
 
 	maxResponseBytes = 32 << 20
 )
@@ -58,13 +55,10 @@ type Config struct {
 	// Token supplies the bearer token. Nil sends no Authorization header.
 	Token TokenSource
 	// HTTPClient sends requests. Default: a new http.Client with no overall timeout, since
-	// per-request timeouts come from Timeout and WaitMargin.
+	// per-request timeouts come from Timeout.
 	HTTPClient *http.Client
-	// Timeout bounds each request that does not wait for an execution. Default DefaultTimeout.
+	// Timeout bounds each request. Default DefaultTimeout.
 	Timeout time.Duration
-	// WaitMargin is added to the wait window to bound CreateExecution requests.
-	// Default DefaultWaitMargin.
-	WaitMargin time.Duration
 	// UserAgent, if set, is sent as the User-Agent header.
 	UserAgent string
 }
@@ -84,9 +78,6 @@ func New(cfg Config) (*Client, error) {
 	}
 	if cfg.Timeout <= 0 {
 		cfg.Timeout = DefaultTimeout
-	}
-	if cfg.WaitMargin <= 0 {
-		cfg.WaitMargin = DefaultWaitMargin
 	}
 	hc := cfg.HTTPClient
 	if hc == nil {
@@ -135,19 +126,13 @@ type request struct {
 	query          url.Values
 	body           any
 	idempotencyKey string
-	wait           time.Duration
 }
 
 func (t *TenantClient) do(ctx context.Context, req request, out any) (*Response, error) {
 	if t.tenantID == "" {
 		return nil, errors.New("client: tenant ID is empty")
 	}
-	timeout := t.c.cfg.Timeout
-	waitSeconds := int(math.Ceil(req.wait.Seconds()))
-	if waitSeconds > 0 {
-		timeout = time.Duration(waitSeconds)*time.Second + t.c.cfg.WaitMargin
-	}
-	rctx, cancel := context.WithTimeout(ctx, timeout)
+	rctx, cancel := context.WithTimeout(ctx, t.c.cfg.Timeout)
 	defer cancel()
 
 	var body io.Reader
@@ -176,9 +161,6 @@ func (t *TenantClient) do(ctx context.Context, req request, out any) (*Response,
 	}
 	if req.idempotencyKey != "" {
 		hr.Header.Set(platform.HeaderIdempotencyKey, req.idempotencyKey)
-	}
-	if waitSeconds > 0 {
-		hr.Header.Set(platform.HeaderPrefer, fmt.Sprintf("wait=%d", waitSeconds))
 	}
 	if t.c.cfg.Token != nil {
 		tok, err := t.c.cfg.Token.Token(rctx)

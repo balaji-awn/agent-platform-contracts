@@ -628,7 +628,7 @@
         <li><a href="#conventions">Conventions</a></li>
         <li><a href="#channels">Failure channels</a></li>
         <li><a href="#idempotency">Idempotency</a></li>
-        <li><a href="#prefer">Prefer: wait</a></li>
+        <li><a href="#polling">Short polling</a></li>
       </ul>
       <h2>Design time</h2>
       <ul>
@@ -648,7 +648,6 @@
       <ul>
         <li><a href="#schemas">Schemas</a></li>
         <li><a href="#errors">Error model</a></li>
-        <li><a href="#webhook">Webhook (planned)</a></li>
         <li><a href="#excluded">Deliberately excluded</a></li>
       </ul>
     </nav>
@@ -735,7 +734,7 @@
             </tbody>
           </table>
         </div>
-        <p class="why"><b>Why two channels instead of one</b>Collapsing them would make a 4xx ambiguous: the caller could not tell whether an execution exists, which decides whether retrying with the same idempotency key is safe and whether anything needs cancelling. A failed execution is a result &mdash; it has an id, usage, and a trace &mdash; so it is returned as one.</p>
+        <p class="why"><b>Why two channels instead of one</b>Collapsing them would make a 4xx ambiguous: the caller could not tell whether an execution exists, which decides whether retrying with the same idempotency key is safe and whether anything needs cancelling. A failed execution is a result &mdash; it has an id, a status, and a trace &mdash; so it is returned as one.</p>
       </section>
 
       <section id="idempotency">
@@ -758,7 +757,7 @@
             <div class="field-head">
               <span class="fname">Same key, same body</span>
             </div>
-            <p>Returns the recorded execution in its current state, starts nothing, and honours <code>Prefer: wait</code> again. Bodies are compared as JSON values after RFC 8785 canonicalization.</p>
+            <p>Returns the recorded execution in its current state, and starts nothing: <span class="chip s-2xx">200</span> if it has finished, <span class="chip s-2xx">202</span> if it is still running. Bodies are compared as JSON values after RFC 8785 canonicalization.</p>
             <p class="why"><b>Why canonical comparison, not bytes</b>The body is re-serialized by the caller on redelivery, and map ordering, whitespace, and number formatting are not stable across encoders. A byte comparison would report a conflict for a request that is semantically identical &mdash; turning a routine redelivery into a hard failure.</p>
           </div>
           <div class="field">
@@ -785,34 +784,19 @@
         </div>
       </section>
 
-      <section id="prefer">
-        <h2 class="sec">Prefer: wait</h2>
+      <section id="polling">
+        <h2 class="sec">Short polling</h2>
         <p>
-          <code>POST /executions</code> and the test endpoint are hybrid sync/async. The server holds the
-          request open up to <code>wait=N</code> seconds for a terminal state, then answers
-          <span class="chip s-2xx">200</span> with the execution, or <span class="chip s-2xx">202</span>
-          if it is still running.
+          Executions are asynchronous. <code>POST /executions</code> never holds the request open: it answers
+          <span class="chip s-2xx">202</span> with the queued or running execution, and the caller polls
+          <code>GET /executions/{id}</code> with short requests until the status is terminal. It answers
+          <span class="chip s-2xx">200</span> only when the execution is already terminal as the response is
+          written, for example a replay after the run finished. There are no completion webhooks and no
+          server poll hint: the caller chooses its polling interval, backing off and slowing down when the
+          <code>RateLimit-*</code> headers run low.
         </p>
+        <p class="why"><b>Why short polling rather than a wait window or webhooks</b>Asoar's queue worker already snoozes and resumes jobs, so polling needs no new machinery. A long-held request ties up a worker and a connection per execution and adds a second result path, 200 inline or 202 later. Webhooks add a public callback endpoint, signing, and delivery retries, and a missed delivery still needs polling as a fallback. Short polling gives one code path for every run.</p>
         <div class="fields">
-          <div class="field">
-            <div class="field-head">
-              <span class="fname">Prefer</span>
-              <span class="ftype">header &middot; string</span>
-              <span class="chip c-opt">optional</span>
-              <span class="fnote">e.g. <code>wait=20</code>, <code>respond-async, wait=20</code></span>
-            </div>
-            <p>Parsed as RFC 7240. Other preferences are ignored, and a <code>wait</code> value that is not a non-negative integer is ignored rather than rejected. Without it the server does not wait.</p>
-            <p class="why"><b>Why a wait window at all</b>Most agent runs finish in seconds. Forcing every caller into submit-then-poll would double the round trips and add poll latency to every fast run, while holding the connection open for slow ones would exhaust sockets. The window lets one endpoint serve both without the caller choosing in advance.</p>
-            <p class="why"><b>Why ignore a malformed value</b>RFC 7240 preferences are hints. Rejecting the whole execution because a proxy mangled a hint would turn a cosmetic problem into a failed workflow node.</p>
-          </div>
-          <div class="field">
-            <div class="field-head">
-              <span class="fname">Preference-Applied</span>
-              <span class="ftype">response header</span>
-            </div>
-            <p><code>wait=N</code>, the whole seconds the server was actually willing to wait after applying its own cap.</p>
-            <p class="why"><b>Why echo it</b>The server may cap the window. Without the echo, a caller that asked for 60s and silently got 5s cannot tell a slow agent from a short cap, and will size its poll interval wrong.</p>
-          </div>
           <div class="field">
             <div class="field-head">
               <span class="fname">Location</span>
@@ -1070,10 +1054,6 @@ Authorization: Bearer &lt;service token&gt;</pre>
                 <p class="why"><b>Why required rather than optional</b>An optional safety mechanism is one a caller forgets under pressure, and the failure it prevents &mdash; a double-billed duplicate model run after a worker crash &mdash; is invisible until the invoice. Making it mandatory means no caller can accidentally opt out.</p>
                 <p class="why"><b>Why 512 characters</b><code>node_path</code> can be long for a node nested inside loops and sub-workflows. The cap is generous enough for realistic nesting while still bounding what the platform must index.</p>
               </div>
-              <div class="field">
-                <div class="field-head"><span class="fname">Prefer</span><span class="ftype">string</span><span class="chip c-opt">optional</span></div>
-                <p><code>wait=N</code>. See <a href="#prefer">Prefer: wait</a>.</p>
-              </div>
             </div>
 
             <div class="subhead">Request body &mdash; ExecutionRequest</div>
@@ -1090,7 +1070,7 @@ Authorization: Bearer &lt;service token&gt;</pre>
               </div>
               <div class="field">
                 <div class="field-head"><span class="fname">input</span><span class="ftype">any JSON</span><span class="chip c-req">required</span></div>
-                <p>Must conform to the version's <code>input_schema</code>. A mismatch is <code>400 INPUT_SCHEMA_INVALID</code> with <code>details</code>, and no execution is created.</p>
+                <p>Must conform to the version's <code>input_schema</code>. A mismatch is <code>400 INPUT_SCHEMA_INVALID</code>, whose message names each offending field, and no execution is created.</p>
                 <p class="why"><b>Why validated before anything runs</b>A schema error fails identically every time, so it must be cheap and non-retryable: rejecting before creating an execution means no model call, no bill, and a free idempotency key.</p>
               </div>
               <div class="field">
@@ -1115,14 +1095,9 @@ Authorization: Bearer &lt;service token&gt;</pre>
               </div>
               <div class="field">
                 <div class="field-head"><span class="fname">timeout_ms</span><span class="ftype">integer &ge; 1000</span><span class="chip c-req">required</span></div>
-                <p>Per attempt, measured from execution creation. Above the version's <code>max_timeout_ms</code> is <code>400 REQUEST_INVALID</code> with a <code>details</code> entry for <code>/timeout_ms</code>.</p>
+                <p>Per attempt, measured from execution creation. Above the version's <code>max_timeout_ms</code> is <code>400 REQUEST_INVALID</code>, whose message names <code>/timeout_ms</code>.</p>
                 <p class="why"><b>Why the caller sets it and the platform enforces it</b>The right timeout depends on workflow context &mdash; an interactive triage path and an overnight batch tolerate very different waits &mdash; so the node owns the value. The platform enforces it because a hung provider call must stop consuming budget even if the caller has already walked away.</p>
                 <p class="why"><b>Why a floor of 1000ms</b>Below a second, a timeout says more about network jitter than about the agent, and would mostly produce retries that cannot succeed.</p>
-              </div>
-              <div class="field">
-                <div class="field-head"><span class="fname">callback_url</span><span class="ftype">uri</span><span class="chip c-opt">optional</span></div>
-                <p>Reserved for the planned completion webhook. Not required for the first version.</p>
-                <p class="why"><b>Why reserved now</b>Polling ships first because it is simpler, but the field is in the contract from the start so adding webhooks later is additive rather than a new request shape.</p>
               </div>
             </div>
 
@@ -1149,10 +1124,10 @@ Authorization: Bearer &lt;service token&gt;</pre>
               <table>
                 <thead><tr><th>Status</th><th>Meaning</th></tr></thead>
                 <tbody>
-                  <tr><td class="num"><span class="chip s-2xx">200</span></td><td>Terminal within the wait window, or a replay of a terminal execution. <strong>Includes failures</strong> &mdash; <code>status: failed</code> with <code>error</code> set.</td></tr>
-                  <tr><td class="num"><span class="chip s-2xx">202</span></td><td>Queued or running. Carries <code>Location</code>; poll <code>getExecution</code>.</td></tr>
+                  <tr><td class="num"><span class="chip s-2xx">200</span></td><td>Already terminal when the response was written, for example a replay of a finished execution. <strong>Includes failures</strong> &mdash; <code>status: failed</code> with <code>error</code> set.</td></tr>
+                  <tr><td class="num"><span class="chip s-2xx">202</span></td><td>Queued or running, the usual answer. Carries <code>Location</code>; poll <code>getExecution</code>. See <a href="#polling">Short polling</a>.</td></tr>
                   <tr><td class="num"><span class="chip s-4xx">4xx</span></td><td>Request-level rejection; no execution created.</td></tr>
-                  <tr><td class="num"><span class="chip s-5xx">503</span></td><td><code>PROVIDER_UNAVAILABLE</code> with <code>retry_after_ms</code>.</td></tr>
+                  <tr><td class="num"><span class="chip s-5xx">503</span></td><td><code>PROVIDER_UNAVAILABLE</code> with a <code>Retry-After</code> header.</td></tr>
                 </tbody>
               </table>
             </div>
@@ -1163,7 +1138,6 @@ Authorization: Bearer &lt;service token&gt;</pre>
               <pre>POST /v1/executions
 X-Tenant-ID: acme
 Idempotency-Key: run_8f21/triage_agent/1
-Prefer: wait=20
 Content-Type: application/json
 
 {
@@ -1180,19 +1154,27 @@ Content-Type: application/json
 }</pre>
             </div>
             <div class="code-block">
-              <div class="code-label">200 &mdash; finished inside the window</div>
+              <div class="code-label">202 &mdash; accepted, poll getExecution</div>
+              <pre>HTTP/1.1 202 Accepted
+Location: /v1/executions/exec_01J9
+
+{
+  "execution_id": "exec_01J9",
+  "status": "running",
+  "agent_id": "alert-triage",
+  "agent_version": 3,
+  "trace_id": "tr_77c0"
+}</pre>
+            </div>
+            <div class="code-block">
+              <div class="code-label">200 &mdash; a later poll of getExecution, or a replay, once finished</div>
               <pre>{
   "execution_id": "exec_01J9",
   "status": "succeeded",
   "agent_id": "alert-triage",
   "agent_version": 3,
   "output": { "severity": "high", "verdict": "suspicious", "reasoning": "…" },
-  "usage": { "input_tokens": 1204, "output_tokens": 88, "cost_usd": 0.0131 },
-  "model": { "provider": "anthropic", "name": "claude-sonnet-5" },
-  "latency_ms": 4120,
-  "trace_id": "tr_77c0",
-  "created_at": "2026-09-13T10:22:31Z",
-  "finished_at": "2026-09-13T10:22:35Z"
+  "trace_id": "tr_77c0"
 }</pre>
             </div>
             <div class="code-block">
@@ -1205,11 +1187,8 @@ Content-Type: application/json
   "error": {
     "code": "PROVIDER_UNAVAILABLE",
     "message": "upstream model provider unavailable after internal retries",
-    "retryable": true,
-    "retry_after_ms": 2000
-  },
-  "created_at": "2026-09-13T10:24:02Z",
-  "finished_at": "2026-09-13T10:24:09Z"
+    "retryable": true
+  }
 }</pre>
             </div>
             <div class="code-block">
@@ -1217,9 +1196,8 @@ Content-Type: application/json
               <pre>{
   "error": {
     "code": "INPUT_SCHEMA_INVALID",
-    "message": "input does not match the input schema",
-    "retryable": false,
-    "details": [ { "path": "/alert", "message": "is required" } ]
+    "message": "input does not match the input schema: /alert is required",
+    "retryable": false
   }
 }</pre>
             </div>
@@ -1235,10 +1213,10 @@ Content-Type: application/json
           <div class="op-body">
             <p>
               The polling endpoint. Returns the current <code>Execution</code>; a failed one is a
-              <span class="chip s-2xx">200</span> with <code>status: failed</code>. Unknown or invisible
-              executions are <code>404 EXECUTION_NOT_FOUND</code>.
+              <span class="chip s-2xx">200</span> with <code>status: failed</code>. The caller chooses the polling
+              interval. Unknown or invisible executions are <code>404 EXECUTION_NOT_FOUND</code>.
             </p>
-            <p class="why"><b>Why polling rather than webhooks first</b>The queue worker already knows how to sleep and resume, so polling needs no new machinery, no public callback endpoint, and no delivery guarantees. Webhooks are deferred, not rejected &mdash; they become worthwhile when executions are long enough that polling wastes real capacity.</p>
+            <p class="why"><b>Why short polls rather than webhooks</b>See <a href="#polling">Short polling</a>. Each poll is a cheap, bounded read, so a slow agent costs a few extra requests, not a held connection or a callback path.</p>
             <p class="why"><b>Why a 404 is not retryable</b>Executions are created synchronously by <code>createExecution</code>, so an id that does not resolve will not start resolving later. Retrying would only delay the real failure.</p>
           </div>
         </div>
@@ -1349,25 +1327,11 @@ Content-Type: application/json
             <p class="why"><b>Why cancelled is its own status, not a failure</b>It is the one terminal state the caller caused. Asoar must not route it to a node's on-error branch, and it should not count against agent reliability metrics.</p>
           </div>
           <div class="field">
-            <div class="field-head"><span class="fname">usage</span><span class="ftype">input_tokens, output_tokens, cost_usd</span><span class="chip c-opt">optional</span></div>
-            <p>Reported per execution.</p>
-            <p class="why"><b>Why per execution rather than only on an invoice</b>Asoar journals it per node so a run's cost can be attributed to the node that caused it. An invoice total cannot answer "which node made this workflow expensive". Note that <code>cost_usd</code> is a float today &mdash; integer micro-USD would avoid rounding drift in rollups, and is worth settling before anyone depends on it.</p>
-          </div>
-          <div class="field">
             <div class="field-head"><span class="fname">trace_id</span><span class="ftype">string</span><span class="chip c-opt">optional</span></div>
             <p>Correlates with the platform's own tracing.</p>
             <p class="why"><b>Why returned on the execution</b>It is journalled with the node result so the runs view can deep-link an engineer straight from a failed node to the platform trace, instead of making them search by timestamp.</p>
           </div>
-          <div class="field">
-            <div class="field-head"><span class="fname">latency_ms</span><span class="ftype">integer</span><span class="chip c-opt">optional</span></div>
-            <p>Present once terminal.</p>
-            <p class="why"><b>Why the platform reports it rather than the caller measuring</b>The caller's clock includes queue wait and polling delay. Only the platform can separate how long the agent took from how long Asoar took to notice.</p>
-          </div>
-          <div class="field">
-            <div class="field-head"><span class="fname">finished_at</span><span class="ftype">date-time or null</span><span class="chip c-req">required</span></div>
-            <p>Explicitly null while running.</p>
-            <p class="why"><b>Why nullable rather than absent</b>An explicit null distinguishes "not finished yet" from "this platform version does not send the field", which matters for a client that ignores unknown fields by design.</p>
-          </div>
+        </div>
       </section>
 
       <section id="errors">
@@ -1406,35 +1370,20 @@ Content-Type: application/json
 
         <div class="fields">
           <div class="field">
-            <div class="field-head"><span class="fname">retry_after_ms</span><span class="ftype">integer &ge; 0</span><span class="chip c-opt">optional</span></div>
-            <p>Minimum wait before retrying. Authoritative over the <code>Retry-After</code> header, which carries the same value rounded up to whole seconds.</p>
-            <p class="why"><b>Why both, and why the body wins</b>The header exists so proxies and generic HTTP clients behave sensibly. The body field is authoritative because whole seconds are too coarse for a queue scheduling thousands of jobs, and intermediaries rewrite headers.</p>
+            <div class="field-head"><span class="fname">Retry-After</span><span class="ftype">response header &middot; integer seconds</span><span class="chip c-opt">optional</span></div>
+            <p>Minimum wait before retrying, sent with retryable 429 and 503 rejections. There is no wait field in the error body, and failed executions carry no wait: the caller's own backoff decides.</p>
+            <p class="why"><b>Why only the header</b>It is the standard HTTP signal that proxies and generic clients already honour, and whole seconds are precise enough for retry pacing. One source avoids deciding which of two values wins.</p>
           </div>
           <div class="field">
-            <div class="field-head"><span class="fname">details</span><span class="ftype">FieldError[]</span><span class="chip c-opt">optional</span></div>
-            <p>Each entry has a JSON Pointer <code>path</code> and a <code>message</code> &mdash; into the input for <code>INPUT_SCHEMA_INVALID</code>, into the request body otherwise.</p>
-            <p class="why"><b>Why pointers rather than prose</b>The designer marks the offending field in the Test tab. A sentence describing the problem cannot be attached to an input control; a pointer can.</p>
+            <div class="field-head"><span class="fname">message</span><span class="ftype">string</span><span class="chip c-req">required</span></div>
+            <p>Human-readable. For validation errors it names each offending field by JSON Pointer &mdash; into the input for <code>INPUT_SCHEMA_INVALID</code>, into the request body otherwise &mdash; e.g. <code>input does not match the input schema: /alert/source is required</code>.</p>
+            <p class="why"><b>Why no structured details</b>Nothing consumes field errors programmatically: the designer validates locally from the contract snapshot, and the engine only needs <code>code</code> and <code>retryable</code> to decide what to do. The message is for logs and people, so callers must never parse it.</p>
           </div>
           <div class="field">
             <div class="field-head"><span class="fname">OUTPUT_SCHEMA_VIOLATION</span><span class="ftype">non-retryable</span></div>
             <p>The output did not conform even after the platform's repair loop.</p>
             <p class="why"><b>Why non-retryable despite being non-deterministic</b>The platform has already retried and repaired internally. A further attempt from Asoar mostly repeats work that just failed, and a persistent violation is a contract bug worth surfacing rather than hiding behind retries.</p>
           </div>
-        </div>
-      </section>
-
-      <section id="webhook">
-        <h2 class="sec">Webhook (planned)</h2>
-        <p>
-          <code>executionFinished</code> would POST <code>{ event, execution }</code> to the request's
-          <code>callback_url</code> when an execution reaches a terminal state, where <code>event</code>
-          is one of <code>execution.succeeded</code>, <code>execution.failed</code>, or
-          <code>execution.cancelled</code>. Receivers must treat delivery as at-least-once.
-        </p>
-        <p class="why"><b>Why it is in the spec but not required</b>Writing it down now fixes the payload shape, so the engine can be built to park a node and resume on a callback later without a contract change. It is not required for the first version because polling already works and webhooks add a public endpoint, delivery retries, and signature verification.</p>
-        <div class="note">
-          <p class="note-title">Still to settle</p>
-          <p>Signing and replay protection are unspecified, and the version lifecycle events that would invalidate the catalog cache (<code>agent.version.published</code> / <code>deprecated</code>) are not defined yet.</p>
         </div>
       </section>
 
