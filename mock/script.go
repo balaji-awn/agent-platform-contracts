@@ -151,15 +151,6 @@ func (o Outcome) rejection() rejection {
 	return rejection{status: o.status, body: o.err}
 }
 
-// MatchKind selects production executions, test executions, or both.
-type MatchKind int
-
-const (
-	MatchAny        MatchKind = iota // both createExecution and testAgentVersion
-	MatchProduction                  // createExecution only
-	MatchTest                        // testAgentVersion only
-)
-
 // Match selects the executions a script applies to. Zero fields match anything.
 type Match struct {
 	TenantID       string
@@ -169,13 +160,10 @@ type Match struct {
 	NodePath       string
 	Attempt        int
 	IdempotencyKey string
-	Kind           MatchKind
 }
 
-func (m Match) matches(tenant, key string, req *platform.ExecutionRequest, isTest bool) bool {
+func (m Match) matches(tenant, key string, req *platform.ExecutionRequest) bool {
 	switch {
-	case m.Kind == MatchProduction && isTest, m.Kind == MatchTest && !isTest:
-		return false
 	case m.TenantID != "" && m.TenantID != tenant,
 		m.AgentID != "" && m.AgentID != req.AgentID,
 		m.Version != 0 && m.Version != req.AgentVersion,
@@ -204,9 +192,9 @@ func (s *Server) Script(m Match, outcomes ...Outcome) {
 	s.scripts = append(s.scripts, &script{match: m, outcomes: append([]Outcome(nil), outcomes...)})
 }
 
-func (s *Server) nextOutcomeLocked(tenant, key string, req *platform.ExecutionRequest, isTest bool) Outcome {
+func (s *Server) nextOutcomeLocked(tenant, key string, req *platform.ExecutionRequest) Outcome {
 	for _, sc := range s.scripts {
-		if sc.next < len(sc.outcomes) && sc.match.matches(tenant, key, req, isTest) {
+		if sc.next < len(sc.outcomes) && sc.match.matches(tenant, key, req) {
 			o := sc.outcomes[sc.next]
 			sc.next++
 			return o

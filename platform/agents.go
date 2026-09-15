@@ -101,9 +101,3 @@ type Model struct {
 	Temperature *float64 `json:"temperature,omitempty"`
 	MaxTokens   int      `json:"max_tokens,omitempty"`
 }
-
-// TestRequest is the body of testAgentVersion. TimeoutMs 0 means the version's default timeout.
-type TestRequest struct {
-	Input     json.RawMessage `json:"input"`
-	TimeoutMs int64           `json:"timeout_ms,omitempty"`
-}

@@ -602,7 +602,7 @@
       call, a cancelled run &mdash; and that is not recoverable from the field name alone.
     </p>
     <div class="meta">
-      <span><b>9</b> operations</span>
+      <span><b>8</b> operations</span>
       <span>OpenAPI <b>3.1</b></span>
       <span>JSON Schema <b>2020-12</b></span>
       <span>Base <b>/v1</b></span>
@@ -614,7 +614,6 @@
       <a href="#getAgent"><span class="chip m-get">GET</span><span class="path">/agents/{agent_id}</span></a>
       <a href="#listAgentVersions"><span class="chip m-get">GET</span><span class="path">/agents/{agent_id}/versions</span></a>
       <a href="#getAgentVersion"><span class="chip m-get">GET</span><span class="path">/agents/{agent_id}/versions/{version}</span></a>
-      <a href="#testAgentVersion"><span class="chip m-post">POST</span><span class="path">/agents/{agent_id}/versions/{version}/test</span></a>
       <a href="#createExecution"><span class="chip m-post">POST</span><span class="path">/executions</span></a>
       <a href="#getExecution"><span class="chip m-get">GET</span><span class="path">/executions/{execution_id}</span></a>
       <a href="#cancelExecution"><span class="chip m-post">POST</span><span class="path">/executions/{execution_id}/cancel</span></a>
@@ -637,7 +636,6 @@
         <li><a href="#getAgent"><code>GET /agents/{id}</code></a></li>
         <li><a href="#listAgentVersions"><code>GET …/versions</code></a></li>
         <li><a href="#getAgentVersion"><code>GET …/versions/{v}</code></a></li>
-        <li><a href="#testAgentVersion"><code>POST …/test</code></a></li>
       </ul>
       <h2>Runtime</h2>
       <ul>
@@ -1041,66 +1039,6 @@ Authorization: Bearer &lt;service token&gt;</pre>
             </div>
           </div>
         </div>
-
-        <div class="op" id="testAgentVersion">
-          <div class="op-head">
-            <span class="chip m-post">POST</span>
-            <span class="path">/agents/{agent_id}/versions/{version}/test</span>
-            <span class="opid">testAgentVersion</span>
-          </div>
-          <div class="op-body">
-            <p>
-              A sample run from the designer's Test tab. Behaves exactly like
-              <a href="#createExecution">createExecution</a> &mdash; same order of checks, same failure
-              channels, same <code>Prefer: wait</code> handling &mdash; with four differences.
-            </p>
-
-            <div class="subhead">Differences from createExecution</div>
-            <div class="fields">
-              <div class="field">
-                <div class="field-head"><span class="fname">is_test</span><span class="ftype">flag on the execution</span></div>
-                <p>The returned execution is flagged and excluded from production metrics.</p>
-                <p class="why"><b>Why flagged rather than a separate pipeline</b>A test must exercise the real model, the real schemas, and the real limits, or it proves nothing. Only the accounting differs, so the run is identical and the flag keeps designer experiments out of production dashboards and cost rollups.</p>
-              </div>
-              <div class="field">
-                <div class="field-head"><span class="fname">no Idempotency-Key</span></div>
-                <p>There is no key and no replay.</p>
-                <p class="why"><b>Why</b>A human clicking "Run" wants a fresh run each time. Replay semantics would return a cached result and make the button look broken.</p>
-              </div>
-              <div class="field">
-                <div class="field-head"><span class="fname">no context</span></div>
-                <p>There is no <code>workflow_id</code>, <code>run_id</code>, or <code>node_path</code>.</p>
-                <p class="why"><b>Why</b>A test happens on a draft, before any run exists. Requiring correlation ids would mean inventing fake ones that then pollute traces and billing records.</p>
-              </div>
-              <div class="field">
-                <div class="field-head"><span class="fname">timeout_ms</span><span class="ftype">integer &ge; 1000</span><span class="chip c-opt">optional</span></div>
-                <p>Defaults to the version's <code>default_timeout_ms</code>. Still may not exceed <code>max_timeout_ms</code>.</p>
-                <p class="why"><b>Why optional here but required at runtime</b>The designer is testing the agent, not a node's execution policy, and the author may not have configured one yet. At runtime the node always has a policy, so leaving the timeout implicit there would hide a value that governs a production run.</p>
-              </div>
-            </div>
-
-            <div class="subhead">Request body</div>
-            <div class="code-block">
-              <pre>{
-  "input": { "alert": { "id": "a-1", "source": "edr" } },
-  "timeout_ms": 60000
-}</pre>
-            </div>
-
-            <div class="subhead">Responses</div>
-            <div class="scroller">
-              <table>
-                <thead><tr><th>Status</th><th>Meaning</th></tr></thead>
-                <tbody>
-                  <tr><td class="num"><span class="chip s-2xx">200</span></td><td>Terminal within the wait window &mdash; succeeded, failed, or cancelled.</td></tr>
-                  <tr><td class="num"><span class="chip s-2xx">202</span></td><td>Still running. Poll <code>getExecution</code> with the returned id.</td></tr>
-                  <tr><td class="num"><span class="chip s-4xx">400</span></td><td><code>INPUT_SCHEMA_INVALID</code> with <code>details</code>, so the Test tab can mark the offending field.</td></tr>
-                  <tr><td class="num"><span class="chip s-4xx">409</span></td><td><code>AGENT_VERSION_DISABLED</code></td></tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
       </section>
 
       <!-- ============ RUNTIME ============ -->
@@ -1248,7 +1186,6 @@ Content-Type: application/json
   "status": "succeeded",
   "agent_id": "alert-triage",
   "agent_version": 3,
-  "is_test": false,
   "output": { "severity": "high", "verdict": "suspicious", "reasoning": "…" },
   "usage": { "input_tokens": 1204, "output_tokens": 88, "cost_usd": 0.0131 },
   "model": { "provider": "anthropic", "name": "claude-sonnet-5" },
@@ -1431,11 +1368,6 @@ Content-Type: application/json
             <p>Explicitly null while running.</p>
             <p class="why"><b>Why nullable rather than absent</b>An explicit null distinguishes "not finished yet" from "this platform version does not send the field", which matters for a client that ignores unknown fields by design.</p>
           </div>
-          <div class="field">
-            <div class="field-head"><span class="fname">is_test</span><span class="ftype">boolean</span><span class="fnote">default false</span></div>
-            <p>True for runs started from the designer's Test tab.</p>
-          </div>
-        </div>
       </section>
 
       <section id="errors">
@@ -1510,6 +1442,11 @@ Content-Type: application/json
         <h2 class="sec">Deliberately excluded</h2>
         <p>Things a reader might expect to find here, and why they are absent.</p>
         <div class="fields">
+          <div class="field">
+            <div class="field-head"><span class="fname">A test endpoint</span></div>
+            <p>Removed from the contract.</p>
+            <p class="why"><b>Why</b>Agents are tested in the platform's own tooling. What that cannot do is trial an agent against <em>captured upstream node output</em>, because it has no access to a run's intermediate data, so a workflow author now publishes without that rehearsal. Re-adding it later is additive.</p>
+          </div>
           <div class="field">
             <div class="field-head"><span class="fname">A validate endpoint</span></div>
             <p>Removed from the contract.</p>

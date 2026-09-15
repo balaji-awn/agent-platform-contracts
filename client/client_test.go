@@ -340,12 +340,14 @@ func TestPollFailureIsRetryable(t *testing.T) {
 	}
 }
 
-func TestTestAgentVersionAndTrace(t *testing.T) {
+// Also covers a server mounted under a base path, which the Location header and every request path
+// must respect.
+func TestTraceWithBasePath(t *testing.T) {
 	_, tc := setup(t, mock.Options{BasePath: "/v1"}, client.Config{})
 	ctx := context.Background()
-	x, _, err := tc.TestAgentVersion(ctx, "alert-triage", 3, platform.TestRequest{Input: json.RawMessage(`{"alert":{}}`)}, 5*time.Second)
-	if err != nil || !x.IsTest || x.Status != platform.ExecutionSucceeded {
-		t.Fatalf("test run = %+v, %v", x, err)
+	x, _, err := tc.CreateExecution(ctx, "k1", execRequest("run1"), 5*time.Second)
+	if err != nil || x.Status != platform.ExecutionSucceeded {
+		t.Fatalf("create = %+v, %v", x, err)
 	}
 	tr, _, err := tc.GetExecutionTrace(ctx, x.ExecutionID)
 	if err != nil || tr.ExecutionID != x.ExecutionID || len(tr.Steps) == 0 {

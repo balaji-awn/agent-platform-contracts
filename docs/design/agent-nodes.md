@@ -19,8 +19,7 @@ Let Asoar workflows use agents built in the separate **agent platform service**.
 2. Drop them onto the canvas as nodes.
 3. Bind their inputs and outputs like any other action.
 4. Configure timeout, retry, and error handling per node.
-5. Test them from the designer.
-6. Publish workflows that execute those agents reliably on the platform at runtime.
+5. Publish workflows that execute those agents reliably on the platform at runtime.
 
 ## Existing Asoar context (read before changing anything)
 
@@ -55,7 +54,6 @@ Let Asoar workflows use agents built in the separate **agent platform service**.
 - `GET /agents/{id}`: agent metadata.
 - `GET /agents/{id}/versions`: version list with status.
 - `GET /agents/{id}/versions/{v}`: the full contract. Schema is in `agent-version-contract.schema.json`.
-- `POST /agents/{id}/versions/{v}/test`: sample run, flagged as a test so it's excluded from production metrics.
 
 **Runtime:**
 - `POST /executions`: start an execution. Hybrid sync/async via `Prefer: wait=N`: returns 200 with the output if it finishes within the window, otherwise 202 with an `execution_id`.
@@ -93,7 +91,7 @@ Let Asoar workflows use agents built in the separate **agent platform service**.
 - **Canvas node face:** name, info icon, version badge, "vN available" badge, validation error indicator, and a clock badge when execution settings are non-default. The node has success and error handles when `on_error` is `route`.
 - **Inspector:** a right-side panel, not a modal, rendered outside the React Flow viewport. It is driven by `selectedNodeId` and `inspectorTab` in the Zustand store.
   - Clicking the node opens the Inputs tab. The info icon opens the About tab.
-  - Tabs: **Inputs**, **Outputs**, **Settings**, **About**, **Test**.
+  - Tabs: **Inputs**, **Outputs**, **Settings**, **About**.
 - **Settings tab:** generic across all node types (only defaults and limits differ). It shows which values are overridden, with a reset link, and helper text: "Retries apply to timeouts and provider errors. Invalid input fails right away."
 - **About tab:** description, pinned version, model details (read-only), a compare-to-newer-version action, and a link to open the agent in the platform.
 - **Icon buttons on nodes:** use the `nodrag nopan` classes and call `stopPropagation()`. Use `NodeToolbar` for any floating per-node UI.
@@ -112,6 +110,7 @@ Let Asoar workflows use agents built in the separate **agent platform service**.
 | Trusting the draft's contract snapshot at publish | The snapshot can be stale. The platform is the source of truth. |
 | Retrying all errors | Schema errors fail identically every time and just burn attempts. |
 | Webhook-first async | Deferred, not rejected. Polling via River snooze is simpler to ship first. |
+| A separate `/test` endpoint | Agents are tested in the platform own tooling. Cost: a workflow author cannot trial an agent against captured upstream node output before publishing, which the platform tooling cannot do because it has no access to a run intermediate data. Re-adding it later is additive. |
 | A separate `/validate` endpoint | No caller. The designer validates locally from the contract snapshot, and both test and execute already reject bad input with `INPUT_SCHEMA_INVALID` before any model call, so a pre-flight check costs a round trip and saves nothing. Revisit if platform-side admission ever grows beyond schema checks. |
 
 ## Constraints
@@ -180,10 +179,10 @@ Example `execution_policy`:
 
 ### Step 3: Backend proxy endpoints for the designer (Asoar repo)
 
-- `GET /api/agents`, `GET /api/agents/{id}/versions`, `GET /api/agents/{id}/versions/{v}`, `POST /api/agents/{id}/versions/{v}/test`.
+- `GET /api/agents`, `GET /api/agents/{id}/versions`, `GET /api/agents/{id}/versions/{v}`.
 - Cache the catalog list with a short TTL, invalidated by webhook later.
 
-**Done when:** the designer can list, inspect, and test agents without any platform credentials in the browser.
+**Done when:** the designer can list and inspect agents without any platform credentials in the browser.
 
 ### Step 4: Workflow schema and validation (Asoar repo)
 
@@ -225,12 +224,11 @@ Example `execution_policy`:
 
 - **Palette:** "Agents" section, hover info icon, inline preview with "Add to canvas".
 - **Agent node component:** on drop, pin the latest published version and store the snapshot and digest. Pre-fill `execution_policy` from the contract limits. Show the badges: version, update available, validation error, and clock.
-- **Inspector shell:** outside the viewport, with store-driven `selectedNodeId` and `inspectorTab`. Tabs: Inputs, Outputs, Settings, About, Test.
+- **Inspector shell:** outside the viewport, with store-driven `selectedNodeId` and `inspectorTab`. Tabs: Inputs, Outputs, Settings, About.
 - **Settings tab:** generic across node types. Overridden indicators and reset links. Inline validation against the contract limits. Selecting `route` adds or removes the error handle and its edges.
-- **Test tab:** sample input, with the option to reuse captured upstream output. Shows output, usage, and latency.
 - **Upgrade flow:** schema diff and highlighting of broken bindings.
 
-**Done when:** an author can find an agent, drop it, bind it, configure it, test it, and publish a workflow end to end against the mock platform.
+**Done when:** an author can find an agent, drop it, bind it, configure it, and publish a workflow end to end against the mock platform.
 
 ### Step 7: Hardening (later, Asoar repo)
 

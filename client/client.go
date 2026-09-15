@@ -62,8 +62,8 @@ type Config struct {
 	HTTPClient *http.Client
 	// Timeout bounds each request that does not wait for an execution. Default DefaultTimeout.
 	Timeout time.Duration
-	// WaitMargin is added to the wait window to bound CreateExecution and TestAgentVersion
-	// requests. Default DefaultWaitMargin.
+	// WaitMargin is added to the wait window to bound CreateExecution requests.
+	// Default DefaultWaitMargin.
 	WaitMargin time.Duration
 	// UserAgent, if set, is sent as the User-Agent header.
 	UserAgent string

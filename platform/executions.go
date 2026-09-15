@@ -48,7 +48,6 @@ type Execution struct {
 	Status       ExecutionStatus `json:"status"`
 	AgentID      string          `json:"agent_id"`
 	AgentVersion int             `json:"agent_version"`
-	IsTest       bool            `json:"is_test"`
 	// Output is set when Status is succeeded. It is the JSON text "null" for a null output and nil
 	// when absent.
 	Output json.RawMessage `json:"output,omitempty"`

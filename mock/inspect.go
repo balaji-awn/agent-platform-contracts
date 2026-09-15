@@ -36,9 +36,9 @@ func (s *Server) Calls(ops ...Operation) []Call {
 type ExecutionRecord struct {
 	platform.Execution
 	TenantID string
-	// IdempotencyKey is empty for test executions.
+	// IdempotencyKey is the key the execution was created with.
 	IdempotencyKey string
-	// Request is the request that created the execution. Context is empty for test executions.
+	// Request is the request that created the execution.
 	Request platform.ExecutionRequest
 	// Replays counts idempotent replays served for this execution.
 	Replays int

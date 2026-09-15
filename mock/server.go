@@ -49,7 +49,6 @@ const (
 	OpGetAgent          Operation = "getAgent"
 	OpListAgentVersions Operation = "listAgentVersions"
 	OpGetAgentVersion   Operation = "getAgentVersion"
-	OpTestAgentVersion  Operation = "testAgentVersion"
 	OpCreateExecution   Operation = "createExecution"
 	OpGetExecution      Operation = "getExecution"
 	OpCancelExecution   Operation = "cancelExecution"
@@ -69,7 +68,6 @@ var routes = []route{
 	{OpGetAgent, http.MethodGet, "/agents/{agent_id}", (*Server).getAgent},
 	{OpListAgentVersions, http.MethodGet, "/agents/{agent_id}/versions", (*Server).listAgentVersions},
 	{OpGetAgentVersion, http.MethodGet, "/agents/{agent_id}/versions/{version}", (*Server).getAgentVersion},
-	{OpTestAgentVersion, http.MethodPost, "/agents/{agent_id}/versions/{version}/test", (*Server).testAgentVersion},
 	{OpCreateExecution, http.MethodPost, "/executions", (*Server).createExecution},
 	{OpGetExecution, http.MethodGet, "/executions/{execution_id}", (*Server).getExecution},
 	{OpCancelExecution, http.MethodPost, "/executions/{execution_id}/cancel", (*Server).cancelExecution},

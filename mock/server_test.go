@@ -140,7 +140,7 @@ func TestSyncSuccess(t *testing.T) {
 	if got, want := string(x.Output), `{"severity":"high","verdict":"suspicious","reasoning":"Mock verdict."}`; got != want {
 		t.Errorf("output %s, want %s", got, want)
 	}
-	if x.Usage == nil || x.LatencyMs == nil || x.FinishedAt == nil || x.Model == nil || x.TraceID == "" || x.IsTest {
+	if x.Usage == nil || x.LatencyMs == nil || x.FinishedAt == nil || x.Model == nil || x.TraceID == "" {
 		t.Errorf("incomplete execution: %s", body)
 	}
 	if got := resp.Header.Get(platform.HeaderPreferenceApplied); got != "wait=5" {
@@ -478,31 +478,6 @@ func TestScriptMatching(t *testing.T) {
 			t.Errorf("execution %d: code %q, want %q", i, got, want)
 		}
 	}
-}
-
-func TestTestEndpoint(t *testing.T) {
-	h := newHarness(t, mock.Options{})
-	h.srv.Script(mock.Match{Kind: mock.MatchProduction}, mock.Fail(platform.CodeProviderUnavailable))
-	input := map[string]any{"input": map[string]any{"alert": map[string]any{}}}
-
-	resp, body := h.do(http.MethodPost, "/agents/alert-triage/versions/3/test", input, platform.HeaderPrefer, "wait=5")
-	wantStatus(t, resp, body, http.StatusOK)
-	x := decode[platform.Execution](t, body)
-	if x.Status != platform.ExecutionSucceeded || !x.IsTest {
-		t.Fatalf("test execution: %s", body)
-	}
-	rec, _ := h.srv.Execution(x.ExecutionID)
-	if rec.Request.TimeoutMs != 60000 || rec.IdempotencyKey != "" {
-		t.Errorf("record %+v, want default timeout 60000 and no key", rec)
-	}
-
-	resp, body = h.do(http.MethodPost, "/agents/alert-triage/versions/3/test", map[string]any{"input": 1})
-	wantError(t, resp, body, http.StatusBadRequest, platform.CodeInputSchemaInvalid)
-	resp, body = h.do(http.MethodPost, "/agents/alert-triage/versions/3/test", map[string]any{"input": map[string]any{"alert": map[string]any{}}, "timeout_ms": 999999})
-	wantError(t, resp, body, http.StatusBadRequest, platform.CodeRequestInvalid)
-	h.srv.SetVersionStatus("alert-triage", 3, platform.VersionDisabled)
-	resp, body = h.do(http.MethodPost, "/agents/alert-triage/versions/3/test", input)
-	wantError(t, resp, body, http.StatusConflict, platform.CodeAgentVersionDisabled)
 }
 
 func version(id string, n int, status platform.AgentVersionStatus, tags ...string) mock.AgentVersion {

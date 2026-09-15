@@ -2,15 +2,17 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: Asoar Designer API - agent endpoints
-  version: 0.1.0-draft
+  version: 0.2.0-draft
   description: |
-    The endpoints the Asoar backend exposes to the workflow designer so authors can find, inspect, and
-    test agents. This is Step 3 of docs/design/agent-nodes.md. The backend implements it in the Asoar
-    repo; the spec lives here because its shape is determined by the platform contract it proxies
+    The endpoints the Asoar backend exposes to the workflow designer so authors can find and inspect
+    agents. This is Step 3 of docs/design/agent-nodes.md. The backend implements it in the Asoar repo;
+    the spec lives here because its shape is determined by the platform contract it proxies
     (api/openapi.yaml).
 
-    Scope: the agent surface only. Asoar's other designer endpoints - workflows, runs, triggers - are
-    outside this file and outside this repo.
+    Scope: the agent catalog only. It is a read-through proxy - every operation is a GET, and nothing
+    here executes an agent. Agents are tested in the platform's own tooling, so there is no test
+    endpoint; see the rejected alternatives in the design doc. Asoar's other designer endpoints -
+    workflows, runs, triggers - are outside this file and outside this repo.
 
     Why the backend sits in the middle:
     - The browser never holds platform credentials. The backend adds the service credential and the
@@ -25,11 +27,10 @@ info:
       the designer copies input_schema, output_schema, and limits into the node as a snapshot, together
       with digest, so later rendering and validation need no refetch.
     - listAgentVersions drives the "vN available" badge and the upgrade diff.
-    - The test endpoints back the Test tab.
 
-    Upstream failures are translated, not forwarded verbatim. The designer needs to tell apart "this
-    input is wrong" (fix the binding), "the agent version is gone" (fix the pin), and "the platform is
-    unavailable" (try again later). See the Error schema for the mapping.
+    Upstream failures are translated, not forwarded verbatim. The designer needs to tell apart "the
+    agent version is gone" (fix the pin) from "the platform is unavailable" (try again later), and an
+    operator problem must not surface as an author error. See the Error schema for the mapping.
 
     Open, to settle against the Asoar codebase:
     - The error envelope below must be reconciled with the existing HTTP API's error shape. If Asoar
@@ -48,8 +49,6 @@ security:
 tags:
   - name: Agent catalog
     description: Read-through proxy of the platform catalog
-  - name: Agent tests
-    description: Sample runs from the designer's Test tab
 
 paths:
   /agents:
@@ -158,91 +157,6 @@ paths:
               schema: { $ref: '#/components/schemas/AgentVersionContract' }
         default: { $ref: '#/components/responses/Error' }
 
-  /agents/{agent_id}/versions/{version}/test:
-    post:
-      tags: [Agent tests]
-      operationId: startAgentTest
-      summary: Run a sample execution from the Test tab
-      description: |
-        Starts a test execution on the platform, flagged there so it stays out of production metrics.
-        The backend holds the request open briefly for a result. If the run finishes in that window the
-        response is 200 with a terminal TestRun; otherwise it is 202 with a running TestRun that the
-        designer polls with getAgentTest.
-
-        A run that fails is a 200 or 202 with status failed and the error inside the TestRun, not an
-        error response: the Test tab shows a failed agent run as a result, and an error response means
-        the test could not be started at all.
-      parameters:
-        - $ref: '#/components/parameters/AgentId'
-        - $ref: '#/components/parameters/Version'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [input]
-              additionalProperties: false
-              properties:
-                input:
-                  description: |
-                    Must conform to the version's input_schema. The designer may build this from sample
-                    values or from captured upstream node output.
-                timeout_ms:
-                  type: integer
-                  minimum: 1000
-                  description: Defaults to the version's default_timeout_ms, and may not exceed max_timeout_ms.
-      responses:
-        '200':
-          description: The run reached a terminal state
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/TestRun' }
-        '202':
-          description: Still running. Poll getAgentTest.
-          headers:
-            Location:
-              description: URI reference of the test run resource.
-              schema: { type: string }
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/TestRun' }
-        default: { $ref: '#/components/responses/Error' }
-
-  /agent-test-runs/{test_run_id}:
-    get:
-      tags: [Agent tests]
-      operationId: getAgentTest
-      summary: Get the state of a test run
-      parameters:
-        - $ref: '#/components/parameters/TestRunId'
-      responses:
-        '200':
-          description: Current state of the test run
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/TestRun' }
-        default: { $ref: '#/components/responses/Error' }
-
-  /agent-test-runs/{test_run_id}/cancel:
-    post:
-      tags: [Agent tests]
-      operationId: cancelAgentTest
-      summary: Stop a test run
-      description: |
-        Backs the Test tab's stop control and should also be sent when the author closes the inspector
-        while a run is in flight, so a long agent run is not left billing against the tenant. Idempotent;
-        cancelling a terminal run returns it unchanged.
-      parameters:
-        - $ref: '#/components/parameters/TestRunId'
-      responses:
-        '202':
-          description: Cancellation accepted, or the run had already finished
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/TestRun' }
-        default: { $ref: '#/components/responses/Error' }
-
 components:
   securitySchemes:
     session:
@@ -264,11 +178,6 @@ components:
       in: path
       required: true
       schema: { type: integer, minimum: 1 }
-    TestRunId:
-      name: test_run_id
-      in: path
-      required: true
-      schema: { type: string, minLength: 1 }
     Cursor:
       name: cursor
       in: query
@@ -357,7 +266,9 @@ components:
             message: { type: string }
         input_schema:
           type: object
-          description: JSON Schema (2020-12) for the execution request's input. The Test tab renders its fields.
+          description: |
+            JSON Schema (2020-12) for the execution request's input. The designer validates bindings
+            against it locally, from the snapshot stored on the node.
         output_schema:
           type: object
           description: JSON Schema (2020-12) the platform guarantees the output conforms to.
@@ -385,67 +296,14 @@ components:
             stores it on the node so publish can detect drift.
         published_at: { type: string, format: date-time }
 
-    Usage:
-      type: object
-      properties:
-        input_tokens: { type: integer }
-        output_tokens: { type: integer }
-        cost_usd: { type: number }
-
     FieldError:
       type: object
       required: [path, message]
       properties:
         path:
           type: string
-          description: JSON Pointer into the input, e.g. /alert/source.
+          description: JSON Pointer into the offending request field, e.g. /limit.
         message: { type: string }
-
-    TestRun:
-      type: object
-      description: |
-        One sample run started from the designer. It is a projection of the platform execution: the
-        fields the Test tab renders, plus the identifiers needed to open the run in the platform.
-      required: [test_run_id, status, agent_id, agent_version, started_at]
-      properties:
-        test_run_id: { type: string }
-        status:
-          type: string
-          enum: [running, succeeded, failed, cancelled]
-        agent_id: { type: string }
-        agent_version: { type: integer, minimum: 1 }
-        output:
-          description: Present when status is succeeded. Conforms to the version's output_schema.
-        error:
-          $ref: '#/components/schemas/Error'
-          description: Present when status is failed. This is the agent run failing, not the request failing.
-        usage: { $ref: '#/components/schemas/Usage' }
-        latency_ms:
-          type: integer
-          description: Present once the run is terminal.
-        model:
-          type: object
-          description: Shown read-only next to the result.
-          properties:
-            provider: { type: string }
-            name: { type: string }
-        platform_execution_id:
-          type: string
-          description: The platform's execution id, for the deep link to the platform trace.
-        trace_id: { type: string }
-        started_at: { type: string, format: date-time }
-        finished_at: { type: [string, 'null'], format: date-time }
-      allOf:
-        - if:
-            required: [status]
-            properties: { status: { const: succeeded } }
-          then:
-            required: [output]
-        - if:
-            required: [status]
-            properties: { status: { const: failed } }
-          then:
-            required: [error]
 
     ErrorEnvelope:
       type: object
@@ -459,15 +317,15 @@ components:
         How each code is used, and where it comes from upstream. The designer switches on `code`; it
         must tolerate codes it does not know and fall back to showing `message`.
 
+        Every operation here is a catalog read, so the codes that only arise from executing an agent -
+        INPUT_SCHEMA_INVALID, AGENT_VERSION_DISABLED, TIMEOUT_ABOVE_LIMIT - cannot occur and are not
+        listed. They return if an execution path is ever added back.
+
         | code | status | meaning for the author | upstream |
         |---|---|---|---|
-        | REQUEST_INVALID | 400 | The designer sent something malformed. A bug, not an author error. | - |
-        | INPUT_SCHEMA_INVALID | 400 | The test input does not match the agent's input schema. `details` marks the fields. | 400 INPUT_SCHEMA_INVALID |
+        | REQUEST_INVALID | 400 | The designer sent something malformed, such as a bad cursor or limit. A bug, not an author error. | 400 REQUEST_INVALID |
         | AGENT_NOT_FOUND | 404 | The agent no longer exists or is not visible to this tenant. | 404 AGENT_NOT_FOUND |
         | AGENT_VERSION_NOT_FOUND | 404 | The pinned version is gone. The node needs repinning. | 404 AGENT_VERSION_NOT_FOUND |
-        | TEST_RUN_NOT_FOUND | 404 | Unknown or expired test run. | - |
-        | AGENT_VERSION_DISABLED | 409 | The version cannot be executed. Publishing against it will also fail. | 409 AGENT_VERSION_DISABLED |
-        | TIMEOUT_ABOVE_LIMIT | 400 | The requested timeout exceeds the agent's max_timeout_ms. | 400 REQUEST_INVALID |
         | PLATFORM_RATE_LIMITED | 429 | Too many calls right now. Retry after `retry_after_ms`. | 429 |
         | PLATFORM_UNAVAILABLE | 503 | The platform is unreachable or failing. Retry later. | 503, 5xx, transport failure |
         | PLATFORM_MISCONFIGURED | 502 | Asoar's platform credential is missing, invalid, or refused. An operator problem, so it must not be shown as an author error. | 401, 403 |
@@ -478,12 +336,8 @@ components:
           type: string
           enum:
             - REQUEST_INVALID
-            - INPUT_SCHEMA_INVALID
             - AGENT_NOT_FOUND
             - AGENT_VERSION_NOT_FOUND
-            - TEST_RUN_NOT_FOUND
-            - AGENT_VERSION_DISABLED
-            - TIMEOUT_ABOVE_LIMIT
             - PLATFORM_RATE_LIMITED
             - PLATFORM_UNAVAILABLE
             - PLATFORM_MISCONFIGURED
@@ -501,5 +355,5 @@ components:
           description: Minimum wait before retrying, when retryable.
         details:
           type: array
-          description: Field-level problems, for marking inputs in the Test tab.
+          description: Field-level problems, for pointing at the offending request field.
           items: { $ref: '#/components/schemas/FieldError' }

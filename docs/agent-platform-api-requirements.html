@@ -778,7 +778,7 @@
         <h2 class="section-title"><span class="num">03</span> Design-time API</h2>
         <h3>The catalog the designer reads</h3>
         <p>
-          These endpoints back the designer's agent palette, the inline preview, the About tab, and the Test tab.
+          These endpoints back the designer's agent palette, the inline preview, and the About tab.
           They are also what the publish validator calls to verify a workflow before freezing it.
         </p>
 
@@ -802,11 +802,6 @@
             <span class="method">GET</span>
             <span class="path">/agents/{agent_id}/versions/{version}</span>
             <p class="note">The full contract: input schema, output schema, limits, digest, model. The source of truth at publish.</p>
-          </div>
-          <div class="ep">
-            <span class="method post">POST</span>
-            <span class="path">/agents/{agent_id}/versions/{version}/test</span>
-            <p class="note">Sample run from the designer, flagged so it stays out of production metrics.</p>
           </div>
         </div>
 
@@ -842,13 +837,6 @@
           <div>
             <p><code>latest_version</code> <span class="must">is the highest version whose status is <code>published</code></span>, or <code>null</code> when the agent has none.</p>
             <p>The designer pins exactly this version when an author drops an agent on the canvas, so it must never point at a deprecated or disabled version.</p>
-          </div>
-        </div>
-
-        <div class="req">
-          <span class="id">R5</span>
-          <div>
-            <p><span class="must"><code>/test</code> behaves exactly like creating an execution</span>, with four differences: the execution is flagged <code>is_test</code> and excluded from production metrics, there is no idempotency key and no replay, there is no workflow <code>context</code>, and <code>timeout_ms</code> defaults to the version's <code>default_timeout_ms</code>.</p>
           </div>
         </div>
       </section>
@@ -898,7 +886,7 @@
         </div>
 
         <div class="req">
-          <span class="id">R6</span>
+          <span class="id">R5</span>
           <div>
             <p><span class="must">Honour <code>Prefer: wait=N</code></span>: hold the request open up to N seconds for a terminal state, then answer 200 with the execution. If it is still running, answer 202 with the <code>execution_id</code> and a <code>Location</code> header.</p>
             <p>Parse it as RFC 7240, so <code>respond-async, wait=20</code> works and unknown preferences are ignored. Without <code>wait</code> the platform does not block. The server may cap N and reports what it applied in <code>Preference-Applied</code>.</p>
@@ -918,14 +906,14 @@
         </ol>
 
         <div class="req">
-          <span class="id">R7</span>
+          <span class="id">R6</span>
           <div>
             <p><span class="must">When <code>timeout_ms</code> elapses, the execution fails with <code>TIMEOUT</code> and <code>retryable: true</code></span>, and the platform stops billing work for it.</p>
           </div>
         </div>
 
         <div class="req">
-          <span class="id">R8</span>
+          <span class="id">R7</span>
           <div>
             <p><span class="must">Cancel is idempotent.</span> A queued or running execution moves to <code>cancelled</code>; a terminal one comes back unchanged. A cancelled execution has no <code>error</code>.</p>
             <p>Asoar calls this when a run is cancelled and when its own deadline expires, so it may arrive at any point, including for an execution that just finished.</p>
@@ -933,7 +921,7 @@
         </div>
 
         <div class="req">
-          <span class="id">R9</span>
+          <span class="id">R8</span>
           <div>
             <p><span class="must">The platform guarantees <code>output</code> conforms to the version's <code>output_schema</code></span> for a succeeded execution, using structured output plus an internal repair loop.</p>
             <p>Asoar re-validates as defence in depth and treats a violation as a non-retryable node failure, so a schema break surfaces as a workflow error rather than corrupt downstream bindings.</p>
@@ -968,7 +956,7 @@
         </div>
 
         <div class="req">
-          <span class="id">R10</span>
+          <span class="id">R9</span>
           <div>
             <p><span class="must">A published version is immutable.</span> Any change to prompt, model, temperature, or either schema creates a new version.</p>
             <p>This is what makes a workflow run reproducible: a published Asoar workflow keeps calling the exact version it was published against, and upgrading is an explicit author action.</p>
@@ -976,7 +964,7 @@
         </div>
 
         <div class="req">
-          <span class="id">R11</span>
+          <span class="id">R10</span>
           <div>
             <p><span class="must"><code>digest</code> is <code>sha256:</code> followed by the lowercase hex SHA-256 of the RFC 8785 canonical JSON of <code>{input_schema, output_schema, limits}</code></span>, computed over the JSON exactly as served.</p>
             <p>Model details are excluded on purpose, so the digest tracks only what callers bind against. Asoar stores it in the node and compares it at publish; a mismatch blocks the publish rather than silently breaking bindings.</p>
@@ -1022,7 +1010,7 @@
         </p>
 
         <div class="req">
-          <span class="id">R12</span>
+          <span class="id">R11</span>
           <div>
             <p><span class="must">Every error carries <code>code</code>, <code>message</code>, and an explicit <code>retryable</code> boolean.</span></p>
             <p>Asoar decides retries from the flag alone. Retryable failures consume a node attempt and get the backoff; non-retryable ones skip the remaining attempts and go straight to the node's on-error behaviour, because a schema error fails identically every time and would just burn attempts.</p>
@@ -1060,7 +1048,7 @@
         </div>
 
         <div class="req">
-          <span class="id">R13</span>
+          <span class="id">R12</span>
           <div>
             <p>Retryable errors <span class="must">carry <code>retry_after_ms</code></span>, which is authoritative. The <code>Retry-After</code> header, rounded up to whole seconds, is for intermediaries.</p>
             <p><code>QUOTA_EXCEEDED</code> covers both the tenant's quota and the advertised request rate limit. Because the platform absorbs transient provider errors internally, a <code>PROVIDER_*</code> failure that reaches Asoar is terminal for that execution.</p>
@@ -1084,14 +1072,14 @@
         </p>
 
         <div class="req">
-          <span class="id">R14</span>
+          <span class="id">R13</span>
           <div>
             <p><span class="must"><code>Idempotency-Key</code> is required on every <code>POST /executions</code></span> and is scoped to the tenant.</p>
           </div>
         </div>
 
         <div class="req">
-          <span class="id">R15</span>
+          <span class="id">R14</span>
           <div>
             <p><span class="must">A repeat of the same key with the same JSON body returns the recorded execution in its current state and starts nothing.</span></p>
             <p>Bodies are compared as JSON values after RFC 8785 canonicalization, so key order and whitespace do not matter. The replay honours <code>Prefer: wait</code> again, which is what lets a redelivered job simply wait for the original execution to finish.</p>
@@ -1099,7 +1087,7 @@
         </div>
 
         <div class="req">
-          <span class="id">R16</span>
+          <span class="id">R15</span>
           <div>
             <p><span class="must">The same key with a different body is <code>409 IDEMPOTENCY_KEY_REUSED</code>.</span></p>
             <p>That is a bug signal, not a retry: it means two different node inputs collided on one key.</p>
@@ -1107,7 +1095,7 @@
         </div>
 
         <div class="req">
-          <span class="id">R17</span>
+          <span class="id">R16</span>
           <div>
             <p><span class="must">Keys are retained for at least 24 hours</span> after the execution is created, and a request-level rejection does not record the key.</p>
             <p>The retention window is a proposal &mdash; confirm what the platform can actually hold, since it bounds how long a queue job may be delayed and still be replay-safe.</p>
@@ -1144,18 +1132,6 @@ sequenceDiagram
 
     Author->>D: Drop the agent on the canvas
     Note over D: Pin alert-triage v3, store the snapshot and digest,<br/>prefill timeout and retries from limits
-
-    Author->>D: Run a sample from the Test tab
-    D->>B: POST /api/agents/alert-triage/versions/3/test
-    B->>P: POST /agents/alert-triage/versions/3/test with Prefer wait=20
-    alt Finishes inside the wait window
-        P-->>B: 200 succeeded with output, usage, latency_ms
-    else Still running
-        P-->>B: 202 execution_id
-        B->>P: GET /executions/exec_01
-        P-->>B: 200 succeeded
-    end
-    B-->>D: Output, usage, latency
 
     Author->>D: Publish the workflow
     D->>B: Publish request
@@ -1249,7 +1225,7 @@ sequenceDiagram
           </div>
           <div>
             <span class="tag">Q3 &middot; idempotency</span>
-            <p>How long can recorded keys actually be retained (R17 proposes 24 hours)?</p>
+            <p>How long can recorded keys actually be retained (R16 proposes 24 hours)?</p>
           </div>
           <div>
             <span class="tag">Q4 &middot; webhooks</span>

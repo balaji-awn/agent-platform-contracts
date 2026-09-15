@@ -108,14 +108,6 @@ func decodeRaw(raw []byte, v any, strict bool, required ...string) (rejection, b
 	return rejection{}, true
 }
 
-func decodeBody(r *http.Request, v any, strict bool, required ...string) (rejection, bool) {
-	raw, rej, ok := readBody(r)
-	if !ok {
-		return rej, false
-	}
-	return decodeRaw(raw, v, strict, required...)
-}
-
 // checkExecutionRequest applies the ExecutionRequest constraints that decoding does not.
 func checkExecutionRequest(raw []byte, req *platform.ExecutionRequest) (rejection, bool) {
 	var top struct {
@@ -166,8 +158,8 @@ func (s *Server) preferWait(r *http.Request) (time.Duration, bool) {
 	return 0, false
 }
 
-// admitLocked runs the version, timeout, and input checks shared by createExecution and
-// testAgentVersion. v is nil when the version does not exist or is invisible.
+// admitLocked runs the version, timeout, and input checks for createExecution. v is nil when the
+// version does not exist or is invisible.
 func (s *Server) admitLocked(v *AgentVersion, timeoutMs int64, input json.RawMessage) (rejection, bool) {
 	if v == nil {
 		return errorFor(platform.CodeAgentVersionNotFound, "agent version not found"), false
@@ -229,7 +221,7 @@ func (s *Server) createExecution(w http.ResponseWriter, r *http.Request, tenant 
 		writeError(w, rej)
 		return
 	}
-	o := s.nextOutcomeLocked(tenant, key, &req, false)
+	o := s.nextOutcomeLocked(tenant, key, &req)
 	if o.kind == kindReject {
 		s.mu.Unlock()
 		if s.sleep(r, o.delay) {
@@ -237,57 +229,7 @@ func (s *Server) createExecution(w http.ResponseWriter, r *http.Request, tenant 
 		}
 		return
 	}
-	e := s.startLocked(tenant, key, canon, req, false, v, o)
-	s.mu.Unlock()
-	s.respondExecution(w, r, e, wait, asked)
-}
-
-func (s *Server) testAgentVersion(w http.ResponseWriter, r *http.Request, tenant string) {
-	n, err := strconv.Atoi(r.PathValue("version"))
-	if err != nil || n < 1 {
-		writeError(w, errorFor(platform.CodeRequestInvalid, "version must be a positive integer",
-			platform.FieldError{Path: "/version", Message: "must be a positive integer"}))
-		return
-	}
-	var body struct {
-		Input     json.RawMessage `json:"input"`
-		TimeoutMs *int64          `json:"timeout_ms"`
-	}
-	if rej, ok := decodeBody(r, &body, false, "input"); !ok {
-		writeError(w, rej)
-		return
-	}
-	if body.TimeoutMs != nil && *body.TimeoutMs < 1000 {
-		writeError(w, errorFor(platform.CodeRequestInvalid, "timeout_ms must be at least 1000",
-			platform.FieldError{Path: "/timeout_ms", Message: "must be at least 1000"}))
-		return
-	}
-	wait, asked := s.preferWait(r)
-
-	s.mu.Lock()
-	v := s.visibleVersionLocked(tenant, r.PathValue("agent_id"), n)
-	var timeoutMs int64
-	switch {
-	case body.TimeoutMs != nil:
-		timeoutMs = *body.TimeoutMs
-	case v != nil:
-		timeoutMs = v.Limits.DefaultTimeoutMs
-	}
-	if rej, ok := s.admitLocked(v, timeoutMs, body.Input); !ok {
-		s.mu.Unlock()
-		writeError(w, rej)
-		return
-	}
-	req := platform.ExecutionRequest{AgentID: v.AgentID, AgentVersion: v.Version, Input: body.Input, TimeoutMs: timeoutMs}
-	o := s.nextOutcomeLocked(tenant, "", &req, true)
-	if o.kind == kindReject {
-		s.mu.Unlock()
-		if s.sleep(r, o.delay) {
-			writeError(w, o.rejection())
-		}
-		return
-	}
-	e := s.startLocked(tenant, "", nil, req, true, v, o)
+	e := s.startLocked(tenant, key, canon, req, v, o)
 	s.mu.Unlock()
 	s.respondExecution(w, r, e, wait, asked)
 }
@@ -320,7 +262,7 @@ func (s *Server) respondExecution(w http.ResponseWriter, r *http.Request, e *exe
 }
 
 // startLocked creates an execution and schedules its outcome and timeout.
-func (s *Server) startLocked(tenant, key string, canon []byte, req platform.ExecutionRequest, isTest bool, v *AgentVersion, o Outcome) *execution {
+func (s *Server) startLocked(tenant, key string, canon []byte, req platform.ExecutionRequest, v *AgentVersion, o Outcome) *execution {
 	s.seq++
 	id := fmt.Sprintf("exec_%06d", s.seq)
 	e := &execution{
@@ -336,7 +278,6 @@ func (s *Server) startLocked(tenant, key string, canon []byte, req platform.Exec
 		Status:       platform.ExecutionRunning,
 		AgentID:      v.AgentID,
 		AgentVersion: v.Version,
-		IsTest:       isTest,
 		TraceID:      "trace_" + id,
 		CreatedAt:    time.Now().UTC(),
 	}

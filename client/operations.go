@@ -62,17 +62,6 @@ func (t *TenantClient) GetAgentVersion(ctx context.Context, agentID string, vers
 	return call[platform.AgentVersionContract](ctx, t, request{method: http.MethodGet, path: versionPath(agentID, version)})
 }
 
-// TestAgentVersion runs a test execution, excluded from production metrics. It waits up to wait
-// (rounded up to whole seconds; zero does not wait) for the result, like CreateExecution.
-func (t *TenantClient) TestAgentVersion(ctx context.Context, agentID string, version int, req platform.TestRequest, wait time.Duration) (*platform.Execution, *Response, error) {
-	return call[platform.Execution](ctx, t, request{
-		method: http.MethodPost,
-		path:   versionPath(agentID, version) + "/test",
-		body:   req,
-		wait:   wait,
-	})
-}
-
 // CreateExecution starts an execution, or replays the one already recorded for idempotencyKey. It
 // waits up to wait (rounded up to whole seconds; zero does not wait) for a terminal state. On 200
 // the execution is terminal, possibly failed (see ExecutionError); on 202 (resp.Accepted) it is still

@@ -24,8 +24,8 @@ info:
       non-2xx status with an `ErrorEnvelope`. No execution is created and an `Idempotency-Key` is not
       recorded, so the same key may be sent again.
     - Execution-level failure: the execution exists and reached `status: failed`. It is returned as an
-      `Execution` with `error` set, with HTTP 200 from createExecution, testAgentVersion, or
-      getExecution. It is never an error response.
+      `Execution` with `error` set, with HTTP 200 from createExecution or getExecution. It is never an
+      error response.
 servers:
   - url: https://agent-platform.internal/v1
     description: Placeholder
@@ -113,36 +113,6 @@ paths:
         - $ref: '#/components/parameters/Version'
       responses:
         '200': { $ref: '#/components/responses/AgentVersionContract' }
-        default: { $ref: '#/components/responses/Error' }
-
-  /agents/{agent_id}/versions/{version}/test:
-    post:
-      tags: [Agents]
-      operationId: testAgentVersion
-      summary: Run a test execution from the designer
-      description: |
-        Same behavior as createExecution, including the order of checks and the failure channels,
-        except that the execution is flagged `is_test` and excluded from production metrics, there is
-        no `Idempotency-Key` and no replay, there is no `context`, and `timeout_ms` defaults to the
-        version's `default_timeout_ms`. Poll the returned execution with getExecution.
-      parameters:
-        - $ref: '#/components/parameters/TenantId'
-        - $ref: '#/components/parameters/AgentId'
-        - $ref: '#/components/parameters/Version'
-        - $ref: '#/components/parameters/PreferWait'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [input]
-              properties:
-                input: {}
-                timeout_ms: { type: integer, minimum: 1000 }
-      responses:
-        '200': { $ref: '#/components/responses/ExecutionFinished' }
-        '202': { $ref: '#/components/responses/ExecutionAccepted' }
         default: { $ref: '#/components/responses/Error' }
 
   /executions:
@@ -579,7 +549,6 @@ components:
           enum: [queued, running, succeeded, failed, cancelled]
         agent_id: { type: string }
         agent_version: { type: integer }
-        is_test: { type: boolean, default: false }
         output:
           description: Present when status is succeeded. Conforms to the version's output_schema, and may be null only if that schema allows it.
         error:
