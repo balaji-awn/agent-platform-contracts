@@ -309,8 +309,8 @@ components:
         must tolerate codes it does not know and fall back to showing `message`.
 
         Every operation here is a catalog read, so the codes that only arise from executing an agent -
-        INPUT_SCHEMA_INVALID, AGENT_VERSION_DISABLED, TIMEOUT_ABOVE_LIMIT - cannot occur and are not
-        listed. They return if an execution path is ever added back.
+        INPUT_SCHEMA_INVALID, AGENT_VERSION_DISABLED, TIMEOUT - cannot occur and are not listed. They
+        return if an execution path is ever added back.
 
         | code | status | meaning for the author | upstream |
         |---|---|---|---|
@@ -339,4 +339,7 @@ components:
         retryable:
           type: boolean
           default: false
-          description: Whether trying the same request again can succeed.
+          description: |
+            Whether trying the same request again can succeed. Mirrors the platform's flag, which is
+            always present upstream; here it is optional because the backend also raises errors of its
+            own. The designer uses it to decide whether to offer a retry.

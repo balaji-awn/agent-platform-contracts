@@ -204,6 +204,10 @@ paths:
       tags: [Executions]
       operationId: getExecutionTrace
       summary: Get intermediate steps of an execution
+      description: |
+        Informational, for the runs view. Steps are a debugging aid, not a contract: nothing in Asoar
+        binds to them, and the platform may change what it records. Unknown or invisible executions
+        return 404 EXECUTION_NOT_FOUND.
       parameters:
         - $ref: '#/components/parameters/TenantId'
         - $ref: '#/components/parameters/ExecutionId'
@@ -402,6 +406,7 @@ components:
             `disabled` rejects executions with AGENT_VERSION_DISABLED.
         deprecation:
           type: object
+          description: Present when status is `deprecated`. The designer shows it on a node pinned to this version.
           properties:
             since: { type: string, format: date-time }
             replacement_version: { type: integer, minimum: 1 }
@@ -489,7 +494,13 @@ components:
           description: Workflow id@version, e.g. wf_phishing@7.
         run_id: { type: string }
         node_path: { type: string }
-        attempt: { type: integer, minimum: 1 }
+        attempt:
+          type: integer
+          minimum: 1
+          description: |
+            Which attempt of this node this is. Asoar increments it only for a deliberate retry after a
+            terminal failure, and it forms part of the `Idempotency-Key`, so a redelivered job reuses
+            the same key while a retry gets a new one. The platform only echoes it into its own records.
 
     Execution:
       type: object
@@ -506,7 +517,12 @@ components:
         error:
           $ref: '#/components/schemas/Error'
           description: Present when status is failed. Absent for cancelled executions.
-        trace_id: { type: string }
+        trace_id:
+          type: string
+          description: |
+            Correlates with the platform's own tracing. Asoar stores it in the run journal so an
+            engineer can open the platform trace for a node. It is the only observability field the
+            execution carries: there is no usage, model, latency, or timestamp.
       allOf:
         - if:
             required: [status]
@@ -534,8 +550,13 @@ components:
                 type: string
                 examples: [model_call, tool_call, output_repair]
               started_at: { type: string, format: date-time }
-              ended_at: { type: string, format: date-time }
-              summary: { type: string }
+              ended_at:
+                type: string
+                format: date-time
+                description: Absent while the step is still running.
+              summary:
+                type: string
+                description: Short human-readable line for the runs view. Never parsed.
 
     ErrorEnvelope:
       type: object
