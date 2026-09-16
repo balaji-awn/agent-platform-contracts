@@ -1,0 +1,1621 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Execution Worker</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500&display=swap">
+<style>
+  :root {
+    --ground: #F5F7F8;
+    --surface: #FFFFFF;
+    --surface-2: #EDF1F2;
+    --ink: #121A1D;
+    --ink-2: #41525A;
+    --ink-3: #6B7D85;
+    --line: #D8E0E3;
+    --line-strong: #B4C3C8;
+    --accent: #0B6E72;
+    --accent-ink: #06565A;
+    --accent-wash: #E0EFEF;
+    --amber: #8F5400;
+    --amber-wash: #F8EBD8;
+    --crimson: #A12A3A;
+    --crimson-wash: #F8E3E6;
+    --green: #1C6B49;
+    --green-wash: #DCEFE5;
+    --radius: 10px;
+    --measure: 68ch;
+    color-scheme: light;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0D1416;
+      --surface: #121D20;
+      --surface-2: #18262A;
+      --ink: #E4EDEF;
+      --ink-2: #AABEC3;
+      --ink-3: #7F979D;
+      --line: #233438;
+      --line-strong: #384E53;
+      --accent: #5CC4C1;
+      --accent-ink: #8FDAD7;
+      --accent-wash: #0F2C2E;
+      --amber: #E2A55E;
+      --amber-wash: #2C2317;
+      --crimson: #EA8D98;
+      --crimson-wash: #31191D;
+      --green: #62BC8F;
+      --green-wash: #13291F;
+      color-scheme: dark;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground: #0D1416;
+    --surface: #121D20;
+    --surface-2: #18262A;
+    --ink: #E4EDEF;
+    --ink-2: #AABEC3;
+    --ink-3: #7F979D;
+    --line: #233438;
+    --line-strong: #384E53;
+    --accent: #5CC4C1;
+    --accent-ink: #8FDAD7;
+    --accent-wash: #0F2C2E;
+    --amber: #E2A55E;
+    --amber-wash: #2C2317;
+    --crimson: #EA8D98;
+    --crimson-wash: #31191D;
+    --green: #62BC8F;
+    --green-wash: #13291F;
+    color-scheme: dark;
+  }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding-inline: 20px;
+    padding-block: 56px 72px;
+  }
+
+  h1, h2, h3, .eyebrow, .chip, .toc a {
+    font-family: Archivo, "IBM Plex Sans", sans-serif;
+  }
+
+  code, kbd, .mono, .code {
+    font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  /* ---------- masthead ---------- */
+
+  .masthead {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding-bottom: 32px;
+    border-bottom: 2px solid var(--ink);
+  }
+
+  .eyebrow {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent-ink);
+    margin: 0;
+  }
+
+  h1 {
+    font-size: clamp(32px, 5vw, 46px);
+    font-weight: 700;
+    line-height: 1.08;
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+    margin: 0;
+  }
+
+  .lede {
+    max-width: var(--measure);
+    font-size: 18px;
+    color: var(--ink-2);
+    margin: 0;
+  }
+
+  .meta {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 14px 24px;
+    margin: 8px 0 0;
+    padding-top: 20px;
+    border-top: 1px solid var(--line);
+  }
+
+  .meta div {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .meta dt {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+
+  .meta dd {
+    margin: 0;
+    font-size: 14px;
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    color: var(--ink);
+  }
+
+  /* ---------- layout ---------- */
+
+  .layout {
+    display: grid;
+    gap: 48px;
+    margin-top: 48px;
+    align-items: start;
+  }
+
+  @media (min-width: 960px) {
+    .layout {
+      grid-template-columns: 208px minmax(0, 1fr);
+    }
+    .toc {
+      position: sticky;
+      top: 28px;
+    }
+  }
+
+  .toc h2 {
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin: 0 0 12px;
+  }
+
+  .toc ol {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    counter-reset: toc;
+  }
+
+  .toc a {
+    display: flex;
+    gap: 10px;
+    padding: 5px 8px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--ink-2);
+    text-decoration: none;
+    counter-increment: toc;
+  }
+
+  .toc a::before {
+    content: counter(toc);
+    color: var(--ink-3);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .toc a:hover {
+    background: var(--surface-2);
+    color: var(--accent-ink);
+  }
+
+  main {
+    display: flex;
+    flex-direction: column;
+    gap: 56px;
+    min-width: 0;
+  }
+
+  section {
+    scroll-margin-top: 24px;
+  }
+
+  h2.section-title {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin: 0 0 8px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  h2.section-title .num {
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+  }
+
+  h3 {
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    line-height: 1.25;
+    text-wrap: balance;
+    margin: 0 0 10px;
+  }
+
+  h4 {
+    font-family: Archivo, sans-serif;
+    font-size: 15px;
+    font-weight: 600;
+    margin: 24px 0 8px;
+  }
+
+  p, li {
+    max-width: var(--measure);
+  }
+
+  main p {
+    margin: 0 0 14px;
+    color: var(--ink-2);
+  }
+
+  main ul {
+    margin: 0 0 14px;
+    padding-left: 20px;
+    color: var(--ink-2);
+  }
+
+  main li {
+    margin-bottom: 6px;
+  }
+
+  strong {
+    color: var(--ink);
+    font-weight: 600;
+  }
+
+  code {
+    font-size: 0.9em;
+    background: var(--surface-2);
+    color: var(--ink);
+    padding: 1px 5px;
+    border-radius: 4px;
+  }
+
+  a {
+    color: var(--accent-ink);
+  }
+
+  /* ---------- at a glance ---------- */
+
+  .glance {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    overflow: hidden;
+    margin: 28px 0;
+  }
+
+  .glance div {
+    background: var(--surface);
+    padding: 18px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .glance dt {
+    font-family: Archivo, sans-serif;
+    font-weight: 600;
+    font-size: 15px;
+    color: var(--ink);
+  }
+
+  .glance dd {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--ink-2);
+    max-width: none;
+  }
+
+  /* ---------- queues ---------- */
+
+  .queues {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    overflow: hidden;
+    margin-bottom: 18px;
+  }
+
+  .q {
+    background: var(--surface);
+    display: grid;
+    grid-template-columns: 116px minmax(0, 1fr);
+    gap: 4px 14px;
+    padding: 16px 20px;
+  }
+
+  @media (max-width: 560px) {
+    .q {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+
+  .qname {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    padding: 3px 0;
+    text-align: center;
+    border-radius: 4px;
+    height: fit-content;
+    background: var(--accent-wash);
+    color: var(--accent-ink);
+    font-family: "IBM Plex Mono", monospace;
+  }
+
+  .q .payload {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 13.5px;
+    color: var(--ink);
+    overflow-wrap: anywhere;
+  }
+
+  .q .note {
+    grid-column: 2;
+    font-size: 14px;
+    color: var(--ink-2);
+    max-width: var(--measure);
+  }
+
+  @media (max-width: 560px) {
+    .q .note {
+      grid-column: 1;
+    }
+  }
+
+  /* ---------- tables ---------- */
+
+  .scroller {
+    overflow-x: auto;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--surface);
+    margin-bottom: 18px;
+  }
+
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 14px;
+  }
+
+  th, td {
+    text-align: left;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }
+
+  th {
+    font-family: Archivo, sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    white-space: nowrap;
+    background: var(--surface-2);
+  }
+
+  tbody tr:last-child td {
+    border-bottom: none;
+  }
+
+  td.code, th.num, td.num {
+    font-family: "IBM Plex Mono", monospace;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  td em {
+    color: var(--ink-3);
+    font-style: normal;
+  }
+
+  .chip {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    padding: 2px 8px;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+
+  .chip.no {
+    background: var(--crimson-wash);
+    color: var(--crimson);
+  }
+
+  .chip.ok {
+    background: var(--green-wash);
+    color: var(--green);
+  }
+
+  .chip.warn {
+    background: var(--amber-wash);
+    color: var(--amber);
+  }
+
+  .chip.neutral {
+    background: var(--surface-2);
+    color: var(--ink-3);
+  }
+
+  /* ---------- requirement callouts ---------- */
+
+  .req {
+    display: grid;
+    grid-template-columns: 64px minmax(0, 1fr);
+    gap: 16px;
+    padding: 14px 18px 14px 14px;
+    margin: 18px 0;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 var(--radius) var(--radius) 0;
+  }
+
+  @media (max-width: 560px) {
+    .req {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 6px;
+    }
+  }
+
+  .req .id {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent-ink);
+    padding-top: 2px;
+  }
+
+  .req p {
+    margin: 0;
+    color: var(--ink);
+    font-size: 15px;
+  }
+
+  .req p + p {
+    margin-top: 6px;
+    color: var(--ink-2);
+    font-size: 14px;
+  }
+
+  .req.rule {
+    border-left-color: var(--crimson);
+  }
+
+  .req.rule .id {
+    color: var(--crimson);
+  }
+
+  .must {
+    font-weight: 600;
+    color: var(--ink);
+  }
+
+  /* ---------- diagrams ---------- */
+
+  figure {
+    margin: 0 0 28px;
+  }
+
+  .plate {
+    background: #FBFCFD;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius);
+    padding: 18px 16px;
+    overflow-x: auto;
+  }
+
+  .plate pre.mermaid {
+    margin: 0;
+    min-width: 640px;
+  }
+
+  figcaption {
+    font-size: 13.5px;
+    color: var(--ink-3);
+    margin-top: 10px;
+    max-width: var(--measure);
+  }
+
+  /* ---------- open questions ---------- */
+
+  .questions {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+
+  .questions div {
+    background: var(--surface);
+    padding: 14px 18px;
+    display: grid;
+    grid-template-columns: 96px minmax(0, 1fr);
+    gap: 14px;
+    align-items: baseline;
+  }
+
+  @media (max-width: 560px) {
+    .questions div {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 4px;
+    }
+  }
+
+  .questions .tag {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--ink-3);
+  }
+
+  .questions p {
+    margin: 0;
+    font-size: 14.5px;
+  }
+
+  footer {
+    margin-top: 64px;
+    padding-top: 20px;
+    border-top: 1px solid var(--line);
+    font-size: 13px;
+    color: var(--ink-3);
+  }
+
+  footer p {
+    max-width: var(--measure);
+    margin: 0;
+  }
+
+  a:focus-visible, .toc a:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * {
+      animation: none !important;
+      transition: none !important;
+    }
+  }
+</style>
+<style>body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+</head>
+<body>
+
+<div class="page">
+  <header class="masthead">
+    <p class="eyebrow">Implementation spec &middot; queue worker &rarr; AI platform</p>
+    <h1>Agent Execution Worker</h1>
+    <p class="lede">
+      How a queue-backed workflow engine runs an AI agent step: start the execution, keep its id on a queued
+      job, and poll until it finishes or its deadline expires. The platform never blocks, so every call
+      returns at once and the waiting happens in the queue. The full specification &mdash; all 34
+      <code>WRK-NN</code> requirements, with diagrams. Plain-text source:
+      <code>docs/specs/agent-execution-worker.md</code>.
+    </p>
+    <dl class="meta">
+      <div>
+        <dt>Spec version</dt>
+        <dd>1.0-draft</dd>
+      </div>
+      <div>
+        <dt>Queue</dt>
+        <dd>pg-boss on Postgres</dd>
+      </div>
+      <div>
+        <dt>Platform contract</dt>
+        <dd>api/openapi.yaml</dd>
+      </div>
+      <div>
+        <dt>Reference impl</dt>
+        <dd>cmd/mockplatform</dd>
+      </div>
+    </dl>
+  </header>
+
+  <div class="layout">
+    <nav class="toc" aria-label="Contents">
+      <h2>Contents</h2>
+      <ol>
+        <li><a href="#rules">The two rules</a></li>
+        <li><a href="#terms">Terms</a></li>
+        <li><a href="#architecture">Architecture</a></li>
+        <li><a href="#platform">Platform requirements</a></li>
+        <li><a href="#jobs">Job model</a></li>
+        <li><a href="#start">Starting</a></li>
+        <li><a href="#poll">Polling</a></li>
+        <li><a href="#backoff">Backoff</a></li>
+        <li><a href="#deadline">Deadline</a></li>
+        <li><a href="#outcomes">Outcomes</a></li>
+        <li><a href="#recovery">Crash recovery</a></li>
+        <li><a href="#observability">Observability</a></li>
+        <li><a href="#config">Configuration</a></li>
+        <li><a href="#tests">Acceptance</a></li>
+        <li><a href="#open">Open questions</a></li>
+      </ol>
+    </nav>
+
+    <main>
+      <section id="rules">
+        <h2 class="section-title"><span class="num">01</span> The two rules</h2>
+        <h3>Everything else follows from these</h3>
+        <p>
+          The worker's whole job is to turn one agent step into exactly one execution on the platform, and to
+          report what happened to it. Two rules constrain every code path below. If you read nothing else,
+          read these.
+        </p>
+
+        <div class="req rule">
+          <span class="id">R1</span>
+          <div>
+            <p><span class="must">One execution per attempt.</span> Once the worker holds an execution id, no code path may start another execution for that attempt.</p>
+            <p>Not on a retryable failure, not on a failed cancel, not on a redelivered job, not at the deadline. Re-running an agent costs a second model call and can repeat its side effects. Only a <em>new attempt</em>, created above the worker, may start a new execution.</p>
+          </div>
+        </div>
+
+        <div class="req rule">
+          <span class="id">R2</span>
+          <div>
+            <p><span class="must">A crash must never produce a second run.</span> Every start call carries an idempotency key derived from the attempt.</p>
+            <p>A redelivered job re-sends the same key, and the platform replays the recorded execution instead of starting a new one. This is what makes the dangerous window &mdash; the platform created the execution, then the worker died before writing down its id &mdash; safe.</p>
+          </div>
+        </div>
+
+        <dl class="glance">
+          <div>
+            <dt>Start returns at once</dt>
+            <dd>The platform answers with an <code>execution_id</code> and a status whether or not the agent has finished.</dd>
+          </div>
+          <div>
+            <dt>The queue does the waiting</dt>
+            <dd>One job per <strong>tick</strong> &mdash; one turn of the loop: a single status read, then a decision. The delay between ticks is a row in Postgres, not a sleeping worker, so it costs no capacity and survives a restart.</dd>
+          </div>
+          <div>
+            <dt>Backoff paces polls only</dt>
+            <dd>Exponential with jitter, capped. There is no backoff curve for re-running agents, because the worker never re-runs one.</dd>
+          </div>
+          <div>
+            <dt>Deadline cancels</dt>
+            <dd>When time runs out the worker cancels the execution, then fails the step, so the agent stops spending.</dd>
+          </div>
+        </dl>
+      </section>
+
+      <section id="terms">
+        <h2 class="section-title"><span class="num">02</span> Terms</h2>
+        <h3>The nine words this page leans on</h3>
+        <p>
+          The same definitions as section 1.4 of the written spec. The one worth reading twice is
+          <strong>tick</strong>, which carries most of the design.
+        </p>
+
+        <dl class="glance">
+          <div>
+            <dt>Tick</dt>
+            <dd>One <code>agent.poll</code> job &mdash; one turn of the polling loop: a single status read, then a decision. A tick takes milliseconds however long the agent runs.</dd>
+          </div>
+          <div>
+            <dt>Step</dt>
+            <dd>One agent invocation inside a workflow run, identified by <code>run_id</code> + <code>step_id</code>.</dd>
+          </div>
+          <div>
+            <dt>Attempt</dt>
+            <dd>One try at a step. A new attempt is created <em>above</em> the worker and starts a new execution; the worker never creates one.</dd>
+          </div>
+          <div>
+            <dt>Execution</dt>
+            <dd>The platform's record of one agent run, identified by an <code>execution_id</code>.</dd>
+          </div>
+          <div>
+            <dt>Terminal</dt>
+            <dd>An execution in <code>succeeded</code>, <code>failed</code>, or <code>cancelled</code>. It will not change again.</dd>
+          </div>
+          <div>
+            <dt>Deadline</dt>
+            <dd>The wall-clock time after which the worker stops waiting for a step's execution.</dd>
+          </div>
+          <div>
+            <dt>Queue</dt>
+            <dd>A named lane of jobs stored in Postgres by pg-boss. The name is an arbitrary string this spec chose, not a library concept.</dd>
+          </div>
+          <div>
+            <dt>Job</dt>
+            <dd>One unit of work on a queue, carrying a JSON payload.</dd>
+          </div>
+          <div>
+            <dt>Handler</dt>
+            <dd>The function a worker registers for a queue. Resolving completes the job; throwing fails it.</dd>
+          </div>
+        </dl>
+
+        <h4>Requirement index</h4>
+        <p>All 34 requirements, and where each one is stated.</p>
+        <div class="scroller">
+          <table>
+            <thead>
+              <tr><th class="num">ID</th><th>Requirement</th><th class="num">Level</th><th>Section</th></tr>
+            </thead>
+            <tbody>
+              <tr><td class="num">WRK-01</td><td>Non-blocking start</td><td class="num"><span class="chip warn">MUST</span></td><td><a href="#platform">Platform requirements</a></td></tr>
+              <tr><td class="num">WRK-02</td><td>Status by execution id</td><td class="num"><span class="chip warn">MUST</span></td><td><a href="#platform">Platform requirements</a></td></tr>
+              <tr><td class="num">WRK-03</td><td>Idempotent start</td><td class="num"><span class="chip warn">MUST</span></td><td><a href="#platform">Platform requirements</a></td></tr>
+              <tr><td class="num">WRK-04</td><td>Idempotency retention outlives queued jobs</td><td class="num"><span class="chip warn">MUST</span></td><td><a href="#platform">Platform requirements</a></td></tr>
+              <tr><td class="num">WRK-05</td><td>Cancellation by execution id</td><td class="num"><span class="chip warn">MUST</span></td><td><a href="#platform">Platform requirements</a></td></tr>
+              <tr><td class="num">WRK-06</td><td>Explicit retryability on errors</td><td class="num"><span class="chip neutral">SHOULD</span></td><td><a href="#platform">Platform requirements</a></td></tr>
+              <tr><td class="num">WRK-07</td><td>Rate-limit signalling</td><td class="num"><span class="chip neutral">SHOULD</span></td><td><a href="#platform">Platform requirements</a></td></tr>
+              <tr><td class="num">WRK-10</td><td>Two job types</td><td class="num"><span class="chip warn">MUST</span></td><td><a href="#jobs">Job model</a></td></tr>
+              <tr><td class="num">WRK-11</td><td>One poll job per tick</td><td class="num"><span class="chip warn">MUST</span></td><td><a href="#jobs">Job model</a></td></tr>
+              <tr><td class="num">WRK-12</td><td>"Still running" is not a job failure</td><td class="num"><span class="chip warn">MUST</span></td><td><a href="#jobs">Job model</a></td></tr>
+              <tr><td class="num">WRK-13</td><td>One poller per execution</td><td class="num"><span class="chip warn">MUST</span></td><td><a href="#jobs">Job model</a></td></tr>
+              <tr><td class="num">WRK-14</td><td>Declare both queues at startup</td><td class="num"><span class="chip warn">MUST</span></td><td><a href="#jobs">Job model</a></td></tr>
+              <tr><td class="num">WRK-15</td><td>Bound how long a tick may stay active</td><td class="num"><span class="chip neutral">SHOULD</span></td><td><a href="#jobs">Job model</a></td></tr>
+              <tr><td class="num">WRK-20</td><td>Stable idempotency key</td><td class="num"><span class="chip warn">MUST</span></td><td><a href="#start">Starting</a></td></tr>
+              <tr><td class="num">WRK-21</td><td>Send the key on every start call</td><td class="num"><span class="chip warn">MUST</span></td><td><a href="#start">Starting</a></td></tr>
+              <tr><td class="num">WRK-22</td><td>Handle both start outcomes</td><td class="num"><span class="chip warn">MUST</span></td><td><a href="#start">Starting</a></td></tr>
+              <tr><td class="num">WRK-23</td><td>Retry call failures, bounded</td><td class="num"><span class="chip neutral">SHOULD</span></td><td><a href="#start">Starting</a></td></tr>
+              <tr><td class="num">WRK-24</td><td>Deadline starts at the first send</td><td class="num"><span class="chip warn">MUST</span></td><td><a href="#deadline">Deadline</a></td></tr>
+              <tr><td class="num">WRK-30</td><td>One query, one decision</td><td class="num"><span class="chip warn">MUST</span></td><td><a href="#poll">Polling</a></td></tr>
+              <tr><td class="num">WRK-31</td><td>Never start from a poll job</td><td class="num"><span class="chip warn">MUST</span></td><td><a href="#poll">Polling</a></td></tr>
+              <tr><td class="num">WRK-32</td><td>Call failures do not end the step</td><td class="num"><span class="chip neutral">SHOULD</span></td><td><a href="#poll">Polling</a></td></tr>
+              <tr><td class="num">WRK-33</td><td>Carry the poll count</td><td class="num"><span class="chip neutral">SHOULD</span></td><td><a href="#poll">Polling</a></td></tr>
+              <tr><td class="num">WRK-40</td><td>Exponential with a cap</td><td class="num"><span class="chip warn">MUST</span></td><td><a href="#backoff">Backoff</a></td></tr>
+              <tr><td class="num">WRK-41</td><td>Full jitter</td><td class="num"><span class="chip warn">MUST</span></td><td><a href="#backoff">Backoff</a></td></tr>
+              <tr><td class="num">WRK-42</td><td>Honour <code>Retry-After</code></td><td class="num"><span class="chip neutral">SHOULD</span></td><td><a href="#backoff">Backoff</a></td></tr>
+              <tr><td class="num">WRK-50</td><td>Cancel, then fail</td><td class="num"><span class="chip warn">MUST</span></td><td><a href="#deadline">Deadline</a></td></tr>
+              <tr><td class="num">WRK-51</td><td>Cancel is best-effort</td><td class="num"><span class="chip warn">MUST</span></td><td><a href="#deadline">Deadline</a></td></tr>
+              <tr><td class="num">WRK-52</td><td>Outcome mapping</td><td class="num"><span class="chip warn">MUST</span></td><td><a href="#outcomes">Outcomes</a></td></tr>
+              <tr><td class="num">WRK-53</td><td>Record the result once</td><td class="num"><span class="chip warn">MUST</span></td><td><a href="#outcomes">Outcomes</a></td></tr>
+              <tr><td class="num">WRK-60</td><td>Redelivery is normal</td><td class="num"><span class="chip warn">MUST</span></td><td><a href="#recovery">Crash recovery</a></td></tr>
+              <tr><td class="num">WRK-61</td><td>No hand-off gap</td><td class="num"><span class="chip warn">MUST</span></td><td><a href="#recovery">Crash recovery</a></td></tr>
+              <tr><td class="num">WRK-62</td><td>Bound the orphan window</td><td class="num"><span class="chip neutral">SHOULD</span></td><td><a href="#recovery">Crash recovery</a></td></tr>
+              <tr><td class="num">WRK-70</td><td>Store the correlation id</td><td class="num"><span class="chip warn">MUST</span></td><td><a href="#observability">Observability</a></td></tr>
+              <tr><td class="num">WRK-71</td><td>Metrics worth having</td><td class="num"><span class="chip neutral">SHOULD</span></td><td><a href="#observability">Observability</a></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="architecture">
+        <h2 class="section-title"><span class="num">03</span> Architecture</h2>
+        <h3>Four moving parts</h3>
+        <p>
+          The engine hands off a step and never blocks on it. The worker owns two handlers that talk to the
+          platform and to each other only through the queue, so any of them can crash between steps without
+          losing the execution.
+        </p>
+
+        <figure>
+          <div class="plate">
+            <pre class="mermaid">
+flowchart LR
+    subgraph ENG["Workflow engine"]
+        WF["Workflow run<br/>step needs an agent"]
+    end
+
+    subgraph QUEUE["pg-boss on Postgres"]
+        SQ[("agent.start")]
+        PQ[("agent.poll")]
+    end
+
+    subgraph WRK["Agent worker"]
+        SH["start handler"]
+        PH["poll handler"]
+    end
+
+    PLAT["AI platform"]
+
+    WF -->|"enqueue step"| SQ
+    SQ --> SH
+    SH -->|"start with Idempotency-Key"| PLAT
+    PLAT -->|"execution_id and status"| SH
+    SH -->|"first tick, startAfter = 1s"| PQ
+    PQ --> PH
+    PH -->|"read execution_id"| PLAT
+    PLAT -->|"status, output or error"| PH
+    PH -->|"still running: next tick, startAfter = backoff"| PQ
+    PH -->|"terminal: step outcome"| WF
+            </pre>
+          </div>
+          <figcaption>
+            <strong>Block diagram.</strong> Note the loop on the right: the poll handler's normal output is
+            another poll job, not a held connection. The only edges into the platform are "start" and "read",
+            and just one of them can create anything.
+          </figcaption>
+        </figure>
+
+        <p>
+          The execution itself lives entirely on the platform. The worker holds only its id, which is why
+          losing that id at the wrong moment is the one genuinely dangerous failure &mdash; and why R2 exists.
+        </p>
+      </section>
+
+      <section id="platform">
+        <h2 class="section-title"><span class="num">04</span> Platform requirements</h2>
+        <h3>What the worker needs from the other side</h3>
+        <p>
+          These are dependencies, not designs. The contract in this repo (<code>api/openapi.yaml</code>)
+          satisfies all seven; a platform that satisfies none of them cannot be driven by this worker at all.
+        </p>
+
+        <div class="req">
+          <span class="id">WRK-01</span>
+          <div>
+            <p><span class="must">Non-blocking start.</span> Starting an execution returns immediately with an <code>execution_id</code> and a status, whether or not the agent has finished.</p>
+            <p>A platform that answers only once the agent completes has nothing for the worker to hold on to, and nothing to poll.</p>
+          </div>
+        </div>
+
+        <div class="req">
+          <span class="id">WRK-02</span>
+          <div>
+            <p><span class="must">Status by execution id.</span> Querying an execution by id returns its current state at once, including the terminal result once it exists.</p>
+            <p>This is the polling primitive. Without it there is no loop.</p>
+          </div>
+        </div>
+
+        <div class="req">
+          <span class="id">WRK-03</span>
+          <div>
+            <p><span class="must">Idempotent start.</span> A start request carries a caller-supplied idempotency key; re-sending the same key with the same body starts nothing and returns the recorded execution with its original id.</p>
+            <p>This is what makes R2 hold. Everything in <a href="#recovery">Crash recovery</a> rests on it.</p>
+          </div>
+        </div>
+
+        <div class="req">
+          <span class="id">WRK-04</span>
+          <div>
+            <p><span class="must">Idempotency retention outlives queued jobs.</span> Recorded keys are kept longer than the longest a job can sit in the queue before delivery.</p>
+            <p>The reference contract keeps them at least 24 hours, so the engine's job retention must be configured below that. Past the window, a redelivery can no longer replay and would start a second execution.</p>
+          </div>
+        </div>
+
+        <div class="req">
+          <span class="id">WRK-05</span>
+          <div>
+            <p><span class="must">Cancellation by execution id</span>, and it is idempotent.</p>
+            <p>Cancelling an execution that has already finished is not an error. The worker needs this at the deadline, when nobody is waiting for the result any more.</p>
+          </div>
+        </div>
+
+        <div class="req">
+          <span class="id">WRK-06</span>
+          <div>
+            <p><span class="must">Explicit retryability on errors.</span> Every error says whether retrying can succeed, and rejections that ask the caller to wait carry <code>Retry-After</code>.</p>
+            <p>The worker then classifies outcomes without maintaining its own table of error codes, and a new code the platform adds later still classifies correctly.</p>
+          </div>
+        </div>
+
+        <div class="req">
+          <span class="id">WRK-07</span>
+          <div>
+            <p><span class="must">Rate-limit signalling</span> on responses.</p>
+            <p>A fleet of pollers can then slow down before it is throttled rather than after.</p>
+          </div>
+        </div>
+
+        <p>
+          <strong>Execution shape.</strong> The worker reads only <code>execution_id</code>,
+          <code>status</code> (<code>queued</code>, <code>running</code>, <code>succeeded</code>,
+          <code>failed</code>, <code>cancelled</code>), <code>output</code> or <code>error</code>, and
+          <code>trace_id</code>. It must not depend on usage, model, latency, or timestamp fields, which the
+          contract does not carry.
+        </p>
+      </section>
+
+      <section id="jobs">
+        <h2 class="section-title"><span class="num">05</span> Job model</h2>
+        <h3>Two queues, one tick at a time</h3>
+
+        <dl class="glance">
+          <div>
+            <dt>The names are ours</dt>
+            <dd><code>agent.start</code> and <code>agent.poll</code> are queue names this spec picked. In pg-boss a queue is a named lane of jobs in Postgres, and the name is any string &mdash; the dot is only a grouping convention.</dd>
+          </div>
+          <div>
+            <dt>Three calls</dt>
+            <dd><code>createQueue(name)</code> once at startup, <code>send(name, data, options)</code> to enqueue, <code>work(name, handler)</code> to consume.</dd>
+          </div>
+          <div>
+            <dt>Resolve or throw</dt>
+            <dd>A handler that resolves completes its job; one that throws is failed and retried under the queue's policy. That is why "still running" must never throw.</dd>
+          </div>
+          <div>
+            <dt>Options used here</dt>
+            <dd><code>startAfter</code> delays a job. <code>singletonKey</code> allows only one job per key in the created, retry, or active state. <code>retryLimit</code> governs failed jobs.</dd>
+          </div>
+        </dl>
+
+        <div class="queues">
+          <div class="q">
+            <span class="qname">agent.start</span>
+            <span class="payload">run_id, step_id, attempt, agent_id, agent_version, input, timeout_ms, deadline_at</span>
+            <p class="note"><strong>Sent by the workflow engine</strong>, once per attempt. Its handler calls the platform, records the <code>execution_id</code>, and enqueues the first poll. Safe to redeliver.</p>
+          </div>
+          <div class="q">
+            <span class="qname">agent.poll</span>
+            <span class="payload">execution_id, run_id, step_id, attempt, deadline_at, poll_count</span>
+            <p class="note"><strong>Sent by the worker itself</strong>, once per tick &mdash; this queue feeds itself. Its handler does one status query, then either finishes the step or schedules the next tick with <code>startAfter</code>. Enqueued with <code>singletonKey: execution_id</code> so one execution can never have two poll chains.</p>
+          </div>
+        </div>
+
+        <h4>Why the wait lives in the queue</h4>
+        <div class="scroller">
+          <table>
+            <thead>
+              <tr><th>&nbsp;</th><th>Sleep inside the job</th><th>One job per tick</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><strong>Where the wait lives</strong></td><td>An in-memory timer in the Node process</td><td>A row in Postgres, <code>created</code> until due</td></tr>
+              <tr><td><strong>The job's state</strong></td><td><code>active</code> for the whole agent run</td><td>Completed; a new job is queued for later</td></tr>
+              <tr><td><strong>Worker capacity</strong></td><td>One slot held per in-flight execution, and <code>localConcurrency</code> defaults to 1</td><td>Slots sized for concurrent <em>reads</em>, not concurrent executions</td></tr>
+              <tr><td><strong>Cost of a restart</strong></td><td>The timer dies; the job sits <code>active</code> until <code>expireInSeconds</code> lapses (default 15 min), then starts over</td><td>Nothing lost; the due row is picked up by whichever worker is alive</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="req">
+          <span class="id">WRK-10</span>
+          <div>
+            <p><span class="must">Two job types</span>, with the payloads above.</p>
+            <p><code>deadline_at</code> is an absolute timestamp, computed once at the start call and copied onto every poll job so it cannot drift.</p>
+          </div>
+        </div>
+
+        <div class="req">
+          <span class="id">WRK-11</span>
+          <div>
+            <p><span class="must">One poll job per tick.</span> A poll job performs exactly one status query, then completes; if the execution is still running it enqueues the next tick with <code>startAfter</code>.</p>
+            <p>The worker must not sleep inside a job. A sleeping handler holds its worker for the whole agent run, and pg-boss defaults to one worker per queue per process &mdash; fifty in-flight executions would need fifty idle slots. Its timer also dies with a deploy, while the job stays <code>active</code> until <code>expireInSeconds</code> lapses.</p>
+          </div>
+        </div>
+
+        <div class="req">
+          <span class="id">WRK-13</span>
+          <div>
+            <p><span class="must">One poller per execution.</span> Poll jobs are enqueued with <code>singletonKey</code> set to the <code>execution_id</code>.</p>
+            <p>Two poll chains are not dangerous &mdash; polling is a read &mdash; but they double the request rate and race to complete the step. pg-boss allows only one job per key in the created, retry, or active state, so the duplicate is discarded rather than queued.</p>
+          </div>
+        </div>
+
+        <div class="req">
+          <span class="id">WRK-12</span>
+          <div>
+            <p><span class="must">"Still running" is a successful job, not a failure.</span></p>
+            <p>The worker must not throw to schedule the next poll, and must not lean on the queue's retry machinery for it. Conflating the two makes every slow agent look like a failing job: failure metrics become meaningless and healthy work eventually lands in the dead-letter queue. Job retries are reserved for <em>call</em> failures &mdash; unreachable platform, 5xx, 429.</p>
+          </div>
+        </div>
+
+        <div class="req">
+          <span class="id">WRK-14</span>
+          <div>
+            <p><span class="must">Both queues are declared with <code>createQueue</code> at startup</span>, before anything is sent to them.</p>
+            <p>pg-boss v10 and later do not create a queue implicitly on <code>send</code>, so a worker that skips this fails on its first enqueue. On majors before v10 the call is harmless, so make it unconditionally.</p>
+          </div>
+        </div>
+
+        <div class="req">
+          <span class="id">WRK-15</span>
+          <div>
+            <p><span class="must">Set <code>expireInSeconds</code> per queue</span> rather than inheriting the 15-minute default.</p>
+            <p>A tick whose worker died stays <code>active</code> until that window lapses. Poll ticks are millisecond reads, so a minute is generous &mdash; left at the default, a crash mid-tick stalls that step for a quarter of an hour before anything retries it.</p>
+          </div>
+        </div>
+
+        <figure>
+          <div class="plate">
+            <pre class="mermaid">
+stateDiagram-v2
+    direction LR
+    [*] --> queued: start accepted
+    queued --> running
+    running --> succeeded: output
+    running --> failed: error with retryable flag
+    running --> cancelled: worker cancelled
+    succeeded --> [*]
+    failed --> [*]
+    cancelled --> [*]
+
+    note right of running
+        The worker polls only while
+        the execution is queued or running
+    end note
+
+    note right of failed
+        Reported upward.
+        The worker never restarts it.
+    end note
+            </pre>
+          </div>
+          <figcaption>
+            <strong>Execution lifecycle, as the platform reports it.</strong> The three terminal states are
+            final: once seen, the worker writes the outcome and stops polling. <code>cancelled</code> is not a
+            failure and must not be routed to a step's error handling.
+          </figcaption>
+        </figure>
+      </section>
+
+      <section id="start">
+        <h2 class="section-title"><span class="num">06</span> Starting</h2>
+        <h3>The key is the whole trick</h3>
+
+        <div class="req">
+          <span class="id">WRK-20</span>
+          <div>
+            <p><span class="must">The idempotency key is a pure function of the attempt:</span> <code>key = f(run_id, step_id, attempt)</code>.</p>
+            <p>No timestamp, no random value, no retry counter &mdash; a redelivered job has to reproduce it byte for byte. A new attempt produces a new key, which is the only mechanism by which a step ever runs an agent twice.</p>
+          </div>
+        </div>
+
+        <div class="req">
+          <span class="id">WRK-21</span>
+          <div>
+            <p><span class="must">Send the key on every start call</span>, including retries of the call itself.</p>
+            <p>Sending it only on the first try defeats WRK-03 exactly when it is needed: the retry after an uncertain failure.</p>
+          </div>
+        </div>
+
+        <div class="req">
+          <span class="id">WRK-22</span>
+          <div>
+            <p><span class="must">Handle both start outcomes.</span></p>
+            <p><strong>Already terminal</strong> (a fast agent, or a replay of a finished execution): record the outcome and complete the step, enqueueing no poll. <strong>Not terminal</strong>: record the <code>execution_id</code>, then enqueue the first tick.</p>
+          </div>
+        </div>
+
+        <div class="req">
+          <span class="id">WRK-23</span>
+          <div>
+            <p><span class="must">Retry call failures, bounded.</span> A transport failure, 5xx, or 429 on the start call is retried with the same key, up to a configured limit.</p>
+            <p>Because the key is stable, a retry following a request the platform <em>did</em> process returns the existing execution rather than creating a second one. A rejection that is not retryable &mdash; invalid input, unknown or disabled version, a key reused with a different body &mdash; fails the step immediately and must not be retried.</p>
+          </div>
+        </div>
+
+        <figure>
+          <div class="plate">
+            <pre class="mermaid">
+sequenceDiagram
+    autonumber
+    participant Q as pg-boss
+    participant W as Worker
+    participant P as AI platform
+
+    Q->>W: agent.start for run r1 step s1 attempt 1
+    Note over W: key = f(r1, s1, 1)<br/>deadline_at = now + timeout + margin
+    W->>P: start execution with Idempotency-Key r1/s1/1
+    P-->>W: 202 execution_id exec_01, status running
+    W->>Q: agent.poll exec_01, startAfter 1s
+
+    Q->>W: agent.poll tick 1
+    W->>P: read exec_01
+    P-->>W: 200 status running
+    W->>Q: agent.poll exec_01, startAfter 2s
+
+    Q->>W: agent.poll tick 2
+    W->>P: read exec_01
+    P-->>W: 200 status succeeded, output, trace_id
+    Note over W: Write outcome keyed by run, step, attempt.<br/>Store trace_id. Enqueue nothing.
+    W-->>Q: step complete
+            </pre>
+          </div>
+          <figcaption>
+            <strong>Happy path.</strong> Each tick is a separate job, so the gaps between them cost nothing but
+            a row in Postgres. The worker touches the platform three times for an execution that took a few
+            seconds.
+          </figcaption>
+        </figure>
+
+        <p>
+          If the start call answers with an execution that is <strong>already terminal</strong> &mdash; a fast
+          agent, or a replay of one that has since finished &mdash; the worker records the outcome and
+          enqueues no poll at all.
+        </p>
+      </section>
+
+      <section id="poll">
+        <h2 class="section-title"><span class="num">07</span> Polling</h2>
+        <h3>One query, one decision</h3>
+        <p>
+          Every tick ends in exactly one of four ways. The branch that is easy to get wrong is the middle one:
+          a failed <em>query</em> is not a failed <em>step</em>, because the execution is still running on the
+          platform regardless of whether the worker could reach it.
+        </p>
+
+        <figure>
+          <div class="plate">
+            <pre class="mermaid">
+flowchart TD
+    A["agent.poll tick"] --> B["Read execution by id"]
+    B --> C{"Outcome?"}
+
+    C -->|"terminal"| D["Write step outcome<br/>store trace_id"]
+    D --> E(["Done, enqueue nothing"])
+
+    C -->|"still running"| F{"Deadline passed?"}
+    F -->|"no"| G["Enqueue next tick<br/>startAfter = backoff with jitter"]
+    F -->|"yes"| H["Cancel execution"]
+    H --> I["Fail step: timed out"]
+
+    C -->|"call failed<br/>5xx, 429, transport"| J{"Deadline passed?"}
+    J -->|"no"| K["Retry the query,<br/>honour Retry-After"]
+    J -->|"yes"| I
+
+    C -->|"execution not found"| L["Fail step: record lost"]
+
+    style D fill:#DCEFE5,stroke:#1C6B49
+    style I fill:#F8E3E6,stroke:#A12A3A
+    style L fill:#F8E3E6,stroke:#A12A3A
+    style G fill:#E0EFEF,stroke:#0B6E72
+            </pre>
+          </div>
+          <figcaption>
+            <strong>The poll tick decision tree.</strong> No branch starts an execution &mdash; that is R1 drawn
+            out. The "still running" branch is the only loop, and it always goes back through the queue.
+          </figcaption>
+        </figure>
+
+        <div class="req">
+          <span class="id">WRK-30</span>
+          <div>
+            <p><span class="must">One query, one decision.</span> Each tick reads the execution once, then does exactly one of: write the outcome and finish; enqueue the next tick; or run the timeout path.</p>
+            <p>Nothing else belongs in a tick. Keeping it to one read and one decision is what makes a tick cheap enough to repeat after a crash.</p>
+          </div>
+        </div>
+
+        <div class="req">
+          <span class="id">WRK-31</span>
+          <div>
+            <p><span class="must">Never start an execution from a poll job.</span></p>
+            <p>R1 expressed in the one place it is most tempting to break: a tick that finds a <em>retryable</em> failure must report it, not restart it.</p>
+          </div>
+        </div>
+
+        <div class="req">
+          <span class="id">WRK-32</span>
+          <div>
+            <p><span class="must">A failed query does not end the step.</span> If the status read itself fails, the execution is still running on the platform and the step is still live.</p>
+            <p>The worker retries the read up to the deadline; only the deadline ends a step whose platform state is unknown. An execution id reported as <em>not found</em> is different: the record is gone, so the step fails at once rather than polling a ghost.</p>
+          </div>
+        </div>
+
+        <div class="req">
+          <span class="id">WRK-33</span>
+          <div>
+            <p><span class="must">Carry the poll count</span> in the job payload.</p>
+            <p><code>poll_count</code> drives the backoff curve; keeping it in the payload means the curve survives redelivery without a database read.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="backoff">
+        <h2 class="section-title"><span class="num">08</span> Backoff</h2>
+        <h3>Exponential, capped, jittered</h3>
+        <p>
+          <code>delay = min(max_delay, base &times; factor<sup>poll_count</sup>)</code>, then scheduled at a
+          random point in <code>[0, delay]</code>. Fast agents finish in the first tick or two; slow ones
+          settle into a cheap steady rate instead of hammering the platform for minutes.
+        </p>
+
+        <figure>
+          <div class="plate">
+            <pre class="mermaid">
+gantt
+    title Poll schedule for a 47-second execution (base 1s, factor 2, cap 30s)
+    dateFormat X
+    axisFormat %Ss
+    section Agent
+    execution running on the platform :done, 0, 47
+    section Poll ticks
+    wait 1s then read  :active, 0, 1
+    wait 2s then read  :active, 1, 3
+    wait 4s then read  :active, 3, 7
+    wait 8s then read  :active, 7, 15
+    wait 16s then read :active, 15, 31
+    wait 30s (capped)  :active, 31, 47
+            </pre>
+          </div>
+          <figcaption>
+            <strong>Six reads to cover 47 seconds.</strong> A fixed one-second interval would have made 47 of
+            them. The bars show the nominal delays; jitter moves each read earlier by a random amount.
+          </figcaption>
+        </figure>
+
+        <div class="scroller">
+          <table>
+            <thead>
+              <tr><th class="num">Tick</th><th class="num">Nominal delay</th><th class="num">Scheduled at</th><th class="num">Elapsed</th></tr>
+            </thead>
+            <tbody>
+              <tr><td class="num">1</td><td class="num">1s</td><td class="num">random(0, 1s)</td><td class="num">~1s</td></tr>
+              <tr><td class="num">2</td><td class="num">2s</td><td class="num">random(0, 2s)</td><td class="num">~3s</td></tr>
+              <tr><td class="num">3</td><td class="num">4s</td><td class="num">random(0, 4s)</td><td class="num">~7s</td></tr>
+              <tr><td class="num">4</td><td class="num">8s</td><td class="num">random(0, 8s)</td><td class="num">~15s</td></tr>
+              <tr><td class="num">5</td><td class="num">16s</td><td class="num">random(0, 16s)</td><td class="num">~31s</td></tr>
+              <tr><td class="num">6+</td><td class="num">30s</td><td class="num">random(0, 30s)</td><td class="num">capped</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p>
+          These delays are <strong>floors, not exact times</strong>. Workers find due jobs by polling, so the
+          real gap is the scheduled delay plus up to <code>pollingIntervalSeconds</code> (default 2). A
+          1-second backoff lands in roughly one to three seconds, and an interval below a second buys nothing.
+        </p>
+
+        <div class="req">
+          <span class="id">WRK-40</span>
+          <div>
+            <p><span class="must">Exponential with a cap.</span> <code>delay = min(max_delay, base &times; factor<sup>poll_count</sup>)</code>, defaults 1s, 2, 30s.</p>
+            <p>Fast agents finish within a tick or two; slow ones settle into a cheap steady rate rather than hammering the platform for minutes.</p>
+          </div>
+        </div>
+
+        <div class="req">
+          <span class="id">WRK-41</span>
+          <div>
+            <p><span class="must">Jitter is required, not a refinement.</span></p>
+            <p>A workflow that fans out starts many steps in the same instant. Without jitter they poll in lockstep for as long as they live, turning smooth load into periodic spikes that trip the platform's rate limits &mdash; and the retry after a 429 re-synchronises them, so the spikes persist.</p>
+          </div>
+        </div>
+
+        <div class="req">
+          <span class="id">WRK-42</span>
+          <div>
+            <p><span class="must">A <code>Retry-After</code> header outranks the computed delay</span> whenever it is longer.</p>
+            <p>The platform's own signal wins. The same goes for rate-limit headers showing the window nearly spent.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="deadline">
+        <h2 class="section-title"><span class="num">09</span> Deadline</h2>
+        <h3>Cancel, then fail</h3>
+
+        <figure>
+          <div class="plate">
+            <pre class="mermaid">
+sequenceDiagram
+    autonumber
+    participant Q as pg-boss
+    participant W as Worker
+    participant P as AI platform
+
+    Note over W: deadline_at was fixed at the first start call<br/>and copied onto every tick
+    Q->>W: agent.poll tick n
+    W->>P: read exec_01
+    P-->>W: 200 status running
+    Note over W: now > deadline_at
+    W->>P: cancel exec_01
+    alt cancel accepted
+        P-->>W: 202 cancellation recorded
+    else cancel fails
+        P--xW: error
+        Note over W: Logged only. It must not<br/>mask the timeout.
+    end
+    W-->>Q: step failed, timed out
+    Note over W: No further polling.<br/>No new execution. Ever.
+            </pre>
+          </div>
+          <figcaption>
+            <strong>Timeout path.</strong> Cancelling first stops the agent spending on a result nobody is
+            waiting for. A cancelled execution may briefly still report <code>running</code>; that is expected
+            and is not polled further.
+          </figcaption>
+        </figure>
+
+        <div class="req">
+          <span class="id">WRK-50</span>
+          <div>
+            <p><span class="must">Cancel, then fail.</span> When the deadline passes with the execution still running, cancel it and then fail the step with a timeout error.</p>
+            <p>Cancelling first stops the agent spending on a result nobody is waiting for.</p>
+          </div>
+        </div>
+
+        <div class="req">
+          <span class="id">WRK-51</span>
+          <div>
+            <p><span class="must">Cancel is best-effort.</span> A cancel that fails must not mask the timeout.</p>
+            <p>The step still fails with the timeout error and the cancel failure is only logged. Cancel may be retried a few times, and a cancelled execution may briefly still report <code>running</code> &mdash; that is expected, and it is not polled further.</p>
+          </div>
+        </div>
+
+        <div class="req">
+          <span class="id">WRK-24</span>
+          <div>
+            <p><span class="must"><code>deadline_at</code> is computed once, before the first start call, and never recomputed.</span></p>
+            <p>It rides along on every poll job, so it survives redelivery. Recomputing it on redelivery would let a crash-looping job extend its own deadline indefinitely &mdash; the step would never time out.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="outcomes">
+        <h2 class="section-title"><span class="num">10</span> Outcomes</h2>
+        <h3>Every row answers "no"</h3>
+        <p>
+          This table is R1 in full. Whatever the platform says, the worker's answer to "should I start another
+          execution?" is the same.
+        </p>
+
+        <div class="scroller">
+          <table>
+            <thead>
+              <tr><th>Platform state</th><th>Step outcome</th><th>Start a new execution?</th></tr>
+            </thead>
+            <tbody>
+              <tr><td class="code">succeeded</td><td>Succeeded, with <code>output</code></td><td><span class="chip no">No</span></td></tr>
+              <tr><td class="code">failed</td><td>Failed, marked <strong>retryable</strong> for the layer above</td><td><span class="chip no">No</span></td></tr>
+              <tr><td class="code">failed</td><td>Failed, terminal (not retryable)</td><td><span class="chip no">No</span></td></tr>
+              <tr><td class="code">cancelled</td><td>Cancelled &mdash; not a failure, not error-routed</td><td><span class="chip no">No</span></td></tr>
+              <tr><td>Still running at the deadline</td><td>Timed out, after cancel</td><td><span class="chip no">No</span></td></tr>
+              <tr><td>Execution id not found</td><td>Failed, terminal (record lost)</td><td><span class="chip no">No</span></td></tr>
+              <tr><td>Status query failed</td><td><em>No outcome yet</em> &mdash; retry until the deadline</td><td><span class="chip no">No</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p>
+          A retryable failure is <strong>reported</strong>, not retried. The layer that owns attempts may then
+          create attempt <em>n+1</em>, which produces a new idempotency key and, only then, a new execution.
+        </p>
+
+        <div class="req">
+          <span class="id">WRK-52</span>
+          <div>
+            <p><span class="must">The mapping above is the contract</span> between platform state and step outcome.</p>
+            <p><code>cancelled</code> is the row people get wrong: it is not a failure, and must not be routed to a step's error handling. It is the one terminal state the caller caused.</p>
+          </div>
+        </div>
+
+        <div class="req">
+          <span class="id">WRK-53</span>
+          <div>
+            <p><span class="must">Record the result once.</span> Writing a step's outcome is idempotent, keyed by <code>run_id</code> + <code>step_id</code> + <code>attempt</code>.</p>
+            <p>A duplicated final tick must not produce two results or two completion events. This is what makes the last crash window in <a href="#recovery">Crash recovery</a> harmless.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="recovery">
+        <h2 class="section-title"><span class="num">11</span> Crash recovery</h2>
+        <h3>The dangerous window, and why it closes</h3>
+
+        <figure>
+          <div class="plate">
+            <pre class="mermaid">
+sequenceDiagram
+    autonumber
+    participant Q as pg-boss
+    participant W as Worker
+    participant P as AI platform
+
+    Q->>W: agent.start r1 s1 attempt 1
+    W->>P: start with Idempotency-Key r1/s1/1
+    P-->>W: 202 execution_id exec_01
+    Note over W: Worker dies here.<br/>The execution exists,<br/>nobody wrote down its id.
+    W--xW: crash
+
+    Q->>W: redelivers agent.start r1 s1 attempt 1
+    Note over W: Same inputs, so the same key.<br/>key = f(r1, s1, 1)
+    W->>P: start with Idempotency-Key r1/s1/1
+    P-->>W: 202 execution_id exec_01, nothing started
+    Note over P: Replay of the recorded execution
+    W->>Q: agent.poll exec_01
+            </pre>
+          </div>
+          <figcaption>
+            <strong>Why R2 works.</strong> The worker never has to guess whether an execution exists. It
+            re-sends the key and lets the platform answer &mdash; the one inference that would cause a double
+            run ("I have no id recorded, so nothing ran") is never made.
+          </figcaption>
+        </figure>
+
+        <div class="scroller">
+          <table>
+            <thead>
+              <tr><th>Crash point</th><th>On redelivery</th><th>Safe because</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>Before the start call is sent</td><td>Call is sent for the first time</td><td>Nothing happened yet</td></tr>
+              <tr><td>After the platform created the execution, before the id was recorded</td><td>Same key replays, same id returned</td><td><span class="chip ok">WRK-03</span> <span class="chip ok">WRK-20</span></td></tr>
+              <tr><td>After the id was recorded, before the poll was enqueued</td><td>Start job replays, then enqueues the poll</td><td>Replay has no side effects</td></tr>
+              <tr><td>Mid poll chain</td><td>At most one tick is lost</td><td>Polling is a read</td></tr>
+              <tr><td>After the result was read, before the step was completed</td><td>Step completed from a repeated read</td><td><span class="chip ok">WRK-53</span> idempotent write</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="req">
+          <span class="id">WRK-60</span>
+          <div>
+            <p><span class="must">Redelivery is normal, not exceptional.</span> The queue may deliver any job more than once, and every job type above is safe under that.</p>
+            <p>The table shows each crash point and what makes it safe. None of them needs a distributed lock or a reconciliation sweep.</p>
+          </div>
+        </div>
+
+        <div class="req">
+          <span class="id">WRK-61</span>
+          <div>
+            <p><span class="must">Never infer "no execution exists" from "no id recorded".</span></p>
+            <p>That single inference is what creates duplicate runs. The only safe recovery is to re-send the key and let the platform answer &mdash; it is the one party that knows.</p>
+          </div>
+        </div>
+
+        <div class="req">
+          <span class="id">WRK-62</span>
+          <div>
+            <p><span class="must">Job retention must stay below the platform's idempotency retention.</span></p>
+            <p>If a job can sit in the queue longer than the platform remembers keys, a very old redelivery can no longer replay &mdash; it would start a second execution. The worker also refuses to start an execution for a job whose <code>deadline_at</code> has already passed, which discards such jobs instead.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="observability">
+        <h2 class="section-title"><span class="num">12</span> Observability</h2>
+        <h3>What to keep, and what it tells you</h3>
+
+        <div class="req">
+          <span class="id">WRK-70</span>
+          <div>
+            <p><span class="must">Store the correlation id.</span> <code>trace_id</code> is written with the step result.</p>
+            <p>An engineer can then open the platform's trace for a failed step instead of searching by timestamp. It is the only correlation the execution carries &mdash; there is no usage, model, latency, or timestamp field.</p>
+          </div>
+        </div>
+
+        <div class="req">
+          <span class="id">WRK-71</span>
+          <div>
+            <p><span class="must">Metrics worth having:</span> polls per execution, time from start to terminal, timeouts, cancels, replayed starts, and duplicate poll suppressions.</p>
+            <p>Two of these are diagnostic rather than decorative. <strong>Polls per execution</strong> shows whether the backoff curve is tuned &mdash; a median in the low single digits with a long tail is healthy. <strong>Replayed starts</strong> should be near zero; a rising count means workers are crash-looping between the start call and recording the id.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="config">
+        <h2 class="section-title"><span class="num">13</span> Configuration</h2>
+        <h3>Knobs and defaults</h3>
+
+        <div class="scroller">
+          <table>
+            <thead>
+              <tr><th>Key</th><th class="num">Default</th><th>Meaning</th></tr>
+            </thead>
+            <tbody>
+              <tr><td class="code">poll.base_delay</td><td class="num">1s</td><td>First poll delay</td></tr>
+              <tr><td class="code">poll.factor</td><td class="num">2</td><td>Exponential factor</td></tr>
+              <tr><td class="code">poll.max_delay</td><td class="num">30s</td><td>Cap on the interval</td></tr>
+              <tr><td class="code">poll.jitter</td><td class="num">full</td><td><code>random(0, delay)</code></td></tr>
+              <tr><td class="code">step.timeout</td><td class="num">per step</td><td>Drives <code>timeout_ms</code> and <code>deadline_at</code>. Must not exceed the agent version's maximum.</td></tr>
+              <tr><td class="code">step.deadline_margin</td><td class="num">1 &times; max_delay</td><td>Grace so a just-arrived result is not discarded</td></tr>
+              <tr><td class="code">start.call_retries</td><td class="num">5</td><td>Bounded retries of the start call, same key</td></tr>
+              <tr><td class="code">poll.call_retries</td><td class="num">3</td><td>Retries of one query before rescheduling the tick</td></tr>
+              <tr><td class="code">cancel.attempts</td><td class="num">3</td><td>Best-effort cancel tries</td></tr>
+              <tr><td class="code">expireInSeconds</td><td class="num">60s / 120s</td><td>How long a claimed poll tick / start job may stay <code>active</code> before pg-boss reclaims it. The library default is 15 minutes.</td></tr>
+              <tr><td class="code">pollingIntervalSeconds</td><td class="num">2</td><td>How often workers look for due jobs; adds up to this much to every scheduled delay</td></tr>
+              <tr><td class="code">localConcurrency</td><td class="num">tune</td><td>Workers per queue per process, default 1. Size it for concurrent ticks, not concurrent executions.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="tests">
+        <h2 class="section-title"><span class="num">14</span> Acceptance</h2>
+        <h3>Twelve scenarios</h3>
+        <p>
+          All twelve run against the mock platform in this repo (<code>cmd/mockplatform</code>), which can be
+          told how slowly to finish an execution.
+        </p>
+
+        <div class="scroller">
+          <table>
+            <thead>
+              <tr><th class="num">#</th><th>Scenario</th><th>Expected</th></tr>
+            </thead>
+            <tbody>
+              <tr><td class="num">1</td><td>Agent finishes instantly</td><td>Step succeeds from the start call; no poll job</td></tr>
+              <tr><td class="num">2</td><td>Agent takes seconds</td><td>N polls with growing gaps, then success</td></tr>
+              <tr><td class="num">3</td><td>Execution fails, retryable</td><td>Failed and marked retryable; <strong>exactly one</strong> execution exists</td></tr>
+              <tr><td class="num">4</td><td>Execution fails, not retryable</td><td>Failed terminally; no retry, no second execution</td></tr>
+              <tr><td class="num">5</td><td>Deadline expires mid-run</td><td>Cancel sent, then step fails with timeout</td></tr>
+              <tr><td class="num">6</td><td>Cancel itself fails</td><td>Step still fails with timeout; cancel failure only logged</td></tr>
+              <tr><td class="num">7</td><td>Crash after send, before id recorded</td><td>Replay returns the same id; exactly one execution</td></tr>
+              <tr><td class="num">8</td><td>Duplicate poll job</td><td>Suppressed by <code>singletonKey</code>; one completion</td></tr>
+              <tr><td class="num">9</td><td>Query fails transiently</td><td>Retried; step still completes normally</td></tr>
+              <tr><td class="num">10</td><td>429 with <code>Retry-After</code></td><td>Next poll waits at least that long</td></tr>
+              <tr><td class="num">11</td><td>Execution id not found</td><td>Fails terminally rather than polling to the deadline</td></tr>
+              <tr><td class="num">12</td><td>Job redelivered after its deadline</td><td>Discarded; no execution started</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p>
+          <strong>Scenarios 3 and 7 are the ones that matter.</strong> Together they prove R1 and R2, and both
+          should assert on the platform's execution <em>count</em>, not only on the step outcome.
+        </p>
+      </section>
+
+      <section id="open">
+        <h2 class="section-title"><span class="num">15</span> Open questions</h2>
+        <h3>Worth settling with the platform team</h3>
+
+        <div class="questions">
+          <div>
+            <span class="tag">Q1 &middot; recovery</span>
+            <p>There is no "find the execution for this key" operation, so recovery depends entirely on replay. An explicit lookup would let a worker reconcile an orphan it never recorded.</p>
+          </div>
+          <div>
+            <span class="tag">Q2 &middot; retention</span>
+            <p>The assumed idempotency retention is at least 24 hours. Job retention must be configured below the real figure.</p>
+          </div>
+          <div>
+            <span class="tag">Q3 &middot; progress</span>
+            <p>Nothing carries partial output or progress, so a long-running agent shows only <code>running</code> to an operator. Progress needs a platform-side field first.</p>
+          </div>
+          <div>
+            <span class="tag">Q4 &middot; fan-out</span>
+            <p>A step mapping an agent over many items means one execution and one poll chain per item. A batch start would cut request volume considerably.</p>
+          </div>
+        </div>
+      </section>
+
+      <footer>
+        <p>
+          All 34 <code>WRK-NN</code> requirements are stated here; the same specification in plain text is
+          <code>docs/specs/agent-execution-worker.md</code>, and the two are kept word for word in step. The
+          platform contract this assumes is <code>api/openapi.yaml</code>; <code>cmd/mockplatform</code>
+          implements that contract for testing.
+        </p>
+      </footer>
+    </main>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/11.15.0/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, securityLevel: "strict" });</script>
+</body>
+</html>

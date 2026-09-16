@@ -9,6 +9,8 @@ The contract between **Asoar** (workflow engine) and the **agent platform** serv
 | `docs/design/agent-nodes.md` | Design, decisions, rejected alternatives, open questions, implementation plan | Done |
 | `docs/agent-platform-api-requirements.html` | What the platform service must expose, for the external team: endpoints, error model, idempotency, and sequence flows | Draft |
 | `docs/agent-platform-api-reference.html` | Endpoint-by-endpoint reference for `api/openapi.yaml`: every parameter and field, with the reasoning behind each one | Draft |
+| `docs/specs/agent-execution-worker.md` | Caller-side spec: how a queue-backed engine starts an execution, polls it to completion, and stays replay-safe | Draft |
+| `docs/agent-execution-worker.html` | The same spec as an illustrated page: all 34 requirements plus block diagram, sequence flows, poll decision tree, backoff schedule | Draft |
 | `schemas/agent-node.schema.json` | Agent node as stored in Asoar workflow JSON | Draft |
 | `schemas/agent-version-contract.schema.json` | Platform response for one agent version | Draft |
 | `api/openapi.yaml` | Platform API that Asoar consumes (OpenAPI 3.1) | Draft |
