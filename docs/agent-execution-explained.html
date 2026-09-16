@@ -1,0 +1,1163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How Agent Execution Works</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500&display=swap">
+<style>
+  :root {
+    --ground: #F5F7F8;
+    --surface: #FFFFFF;
+    --surface-2: #EDF1F2;
+    --ink: #121A1D;
+    --ink-2: #41525A;
+    --ink-3: #6B7D85;
+    --line: #D8E0E3;
+    --line-strong: #B4C3C8;
+    --accent: #0B6E72;
+    --accent-ink: #06565A;
+    --accent-wash: #E0EFEF;
+    --amber: #8F5400;
+    --amber-wash: #F8EBD8;
+    --crimson: #A12A3A;
+    --crimson-wash: #F8E3E6;
+    --green: #1C6B49;
+    --green-wash: #DCEFE5;
+    --radius: 10px;
+    --measure: 68ch;
+    color-scheme: light;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0D1416;
+      --surface: #121D20;
+      --surface-2: #18262A;
+      --ink: #E4EDEF;
+      --ink-2: #AABEC3;
+      --ink-3: #7F979D;
+      --line: #233438;
+      --line-strong: #384E53;
+      --accent: #5CC4C1;
+      --accent-ink: #8FDAD7;
+      --accent-wash: #0F2C2E;
+      --amber: #E2A55E;
+      --amber-wash: #2C2317;
+      --crimson: #EA8D98;
+      --crimson-wash: #31191D;
+      --green: #62BC8F;
+      --green-wash: #13291F;
+      color-scheme: dark;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground: #0D1416;
+    --surface: #121D20;
+    --surface-2: #18262A;
+    --ink: #E4EDEF;
+    --ink-2: #AABEC3;
+    --ink-3: #7F979D;
+    --line: #233438;
+    --line-strong: #384E53;
+    --accent: #5CC4C1;
+    --accent-ink: #8FDAD7;
+    --accent-wash: #0F2C2E;
+    --amber: #E2A55E;
+    --amber-wash: #2C2317;
+    --crimson: #EA8D98;
+    --crimson-wash: #31191D;
+    --green: #62BC8F;
+    --green-wash: #13291F;
+    color-scheme: dark;
+  }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 16px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding-inline: 20px;
+    padding-block: 56px 72px;
+  }
+
+  h1, h2, h3, .eyebrow, .chip, .toc a, .idea .label {
+    font-family: Archivo, "IBM Plex Sans", sans-serif;
+  }
+
+  code, kbd, .mono {
+    font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  /* masthead */
+
+  .masthead {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding-bottom: 32px;
+    border-bottom: 2px solid var(--ink);
+  }
+
+  .eyebrow {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent-ink);
+    margin: 0;
+  }
+
+  h1 {
+    font-size: clamp(32px, 5vw, 46px);
+    font-weight: 700;
+    line-height: 1.08;
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+    margin: 0;
+  }
+
+  .lede {
+    max-width: var(--measure);
+    font-size: 18px;
+    color: var(--ink-2);
+    margin: 0;
+  }
+
+  /* layout */
+
+  .layout {
+    display: grid;
+    gap: 48px;
+    margin-top: 48px;
+    align-items: start;
+  }
+
+  @media (min-width: 960px) {
+    .layout {
+      grid-template-columns: 210px minmax(0, 1fr);
+    }
+    .toc {
+      position: sticky;
+      top: 28px;
+    }
+  }
+
+  .toc h2 {
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin: 0 0 12px;
+  }
+
+  .toc ol {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    counter-reset: toc;
+  }
+
+  .toc a {
+    display: flex;
+    gap: 10px;
+    padding: 5px 8px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--ink-2);
+    text-decoration: none;
+    counter-increment: toc;
+  }
+
+  .toc a::before {
+    content: counter(toc);
+    color: var(--ink-3);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .toc a:hover {
+    background: var(--surface-2);
+    color: var(--accent-ink);
+  }
+
+  main {
+    display: flex;
+    flex-direction: column;
+    gap: 56px;
+    min-width: 0;
+  }
+
+  section {
+    scroll-margin-top: 24px;
+  }
+
+  h2.section-title {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin: 0 0 8px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  h2.section-title .num {
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+  }
+
+  h3 {
+    font-size: 23px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    line-height: 1.25;
+    text-wrap: balance;
+    margin: 0 0 12px;
+  }
+
+  h4 {
+    font-family: Archivo, sans-serif;
+    font-size: 15px;
+    font-weight: 600;
+    margin: 26px 0 8px;
+  }
+
+  p, li {
+    max-width: var(--measure);
+  }
+
+  main p {
+    margin: 0 0 15px;
+    color: var(--ink-2);
+  }
+
+  main ul {
+    margin: 0 0 15px;
+    padding-left: 20px;
+    color: var(--ink-2);
+  }
+
+  main li {
+    margin-bottom: 7px;
+  }
+
+  strong {
+    color: var(--ink);
+    font-weight: 600;
+  }
+
+  em.term {
+    font-style: normal;
+    font-weight: 600;
+    color: var(--ink);
+  }
+
+  code {
+    font-size: 0.9em;
+    background: var(--surface-2);
+    color: var(--ink);
+    padding: 1px 5px;
+    border-radius: 4px;
+  }
+
+  a {
+    color: var(--accent-ink);
+  }
+
+  /* idea callout */
+
+  .idea {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 var(--radius) var(--radius) 0;
+    padding: 16px 20px;
+    margin: 22px 0;
+  }
+
+  .idea .label {
+    display: block;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent-ink);
+    margin-bottom: 6px;
+  }
+
+  .idea p {
+    margin: 0;
+    color: var(--ink);
+    font-size: 15.5px;
+  }
+
+  .idea p + p {
+    margin-top: 8px;
+    color: var(--ink-2);
+    font-size: 14.5px;
+  }
+
+  .idea.warn {
+    border-left-color: var(--crimson);
+  }
+
+  .idea.warn .label {
+    color: var(--crimson);
+  }
+
+  /* glance grid */
+
+  .glance {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    overflow: hidden;
+    margin: 24px 0;
+  }
+
+  .glance div {
+    background: var(--surface);
+    padding: 18px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .glance dt {
+    font-family: Archivo, sans-serif;
+    font-weight: 600;
+    font-size: 15px;
+    color: var(--ink);
+  }
+
+  .glance dd {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.55;
+    color: var(--ink-2);
+    max-width: none;
+  }
+
+  /* tables */
+
+  .scroller {
+    overflow-x: auto;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--surface);
+    margin: 20px 0;
+  }
+
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 14px;
+  }
+
+  th, td {
+    text-align: left;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }
+
+  th {
+    font-family: Archivo, sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    white-space: nowrap;
+    background: var(--surface-2);
+  }
+
+  tbody tr:last-child td {
+    border-bottom: none;
+  }
+
+  td.code, th.num, td.num {
+    font-family: "IBM Plex Mono", monospace;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .chip {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    padding: 2px 8px;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+
+  .chip.good { background: var(--green-wash); color: var(--green); }
+  .chip.bad { background: var(--crimson-wash); color: var(--crimson); }
+  .chip.mid { background: var(--amber-wash); color: var(--amber); }
+
+  /* diagrams */
+
+  figure {
+    margin: 0 0 28px;
+  }
+
+  .plate {
+    background: #FBFCFD;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius);
+    padding: 18px 16px;
+    overflow-x: auto;
+  }
+
+  .plate pre.mermaid {
+    margin: 0;
+    min-width: 620px;
+  }
+
+  figcaption {
+    font-size: 13.5px;
+    color: var(--ink-3);
+    margin-top: 10px;
+    max-width: var(--measure);
+  }
+
+  footer {
+    margin-top: 64px;
+    padding-top: 20px;
+    border-top: 1px solid var(--line);
+    font-size: 13px;
+    color: var(--ink-3);
+  }
+
+  footer p {
+    max-width: var(--measure);
+    margin: 0;
+  }
+
+  a:focus-visible, .toc a:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+</style>
+<style>body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+</head>
+<body>
+
+<div class="page">
+  <header class="masthead">
+    <p class="eyebrow">How it works &middot; running AI agents from a workflow</p>
+    <h1>How Agent Execution Works</h1>
+    <p class="lede">
+      A workflow needs to run an AI agent. The agent might take two seconds or four minutes, it costs money
+      every time it runs, and the machine asking for it may be restarted halfway through. This is how such a
+      thing is made to work reliably &mdash; the ideas first, then the mechanics, with diagrams throughout.
+      No prior knowledge assumed.
+    </p>
+  </header>
+
+  <div class="layout">
+    <nav class="toc" aria-label="Contents">
+      <h2>Contents</h2>
+      <ol>
+        <li><a href="#problem">The problem</a></li>
+        <li><a href="#words">The words</a></li>
+        <li><a href="#shape">The shape of it</a></li>
+        <li><a href="#run">A run, end to end</a></li>
+        <li><a href="#waiting">Where waiting lives</a></li>
+        <li><a href="#pacing">Pacing the checks</a></li>
+        <li><a href="#herd">The stampede problem</a></li>
+        <li><a href="#crash">When things crash</a></li>
+        <li><a href="#time">When time runs out</a></li>
+        <li><a href="#endings">How a run ends</a></li>
+        <li><a href="#cost">What it costs</a></li>
+        <li><a href="#limits">Where the limits are</a></li>
+      </ol>
+    </nav>
+
+    <main>
+      <section id="problem">
+        <h2 class="section-title"><span class="num">01</span> The problem</h2>
+        <h3>Waiting is the hard part</h3>
+        <p>
+          Imagine a workflow that handles a security alert. One of its steps asks an AI agent to read the alert
+          and judge how serious it is. That step is easy to describe and surprisingly hard to run, for three
+          reasons.
+        </p>
+        <p>
+          <strong>It takes an awkward amount of time.</strong> Not milliseconds, so you cannot simply wait for
+          it inside a function call. Not hours, so a nightly batch is overkill. Somewhere between a second and
+          several minutes &mdash; long enough that something will go wrong while you wait.
+        </p>
+        <p>
+          <strong>It costs real money each time.</strong> Running the agent twice by accident is not a tidy
+          little bug; it is a second bill, and possibly a second set of actions taken in the outside world.
+        </p>
+        <p>
+          <strong>The thing doing the waiting is not reliable.</strong> Servers get restarted for deployments,
+          processes crash, networks drop connections at the worst possible moment. Any design that assumes
+          "the program stays alive until the answer comes back" will lose answers in production.
+        </p>
+
+        <div class="idea">
+          <span class="label">The core tension</span>
+          <p>Something that takes minutes has to be supervised by something that can die at any second.</p>
+          <p>Everything that follows is a way of making the supervision <em class="term">disposable</em> &mdash; so that losing the supervisor costs nothing, because the important state was never in it.</p>
+        </div>
+
+        <p>
+          The AI platform helps by refusing to make anyone wait. When you ask it to run an agent, it answers
+          immediately with an identifier and a status, rather than holding the line open until the agent is
+          finished. That single design choice is what makes everything below possible: the work gets an
+          address, and anyone can ask about it later.
+        </p>
+      </section>
+
+      <section id="words">
+        <h2 class="section-title"><span class="num">02</span> The words</h2>
+        <h3>Six terms, then we can talk</h3>
+        <p>
+          These are used throughout. None of them is complicated, but they have precise meanings here.
+        </p>
+
+        <dl class="glance">
+          <div>
+            <dt>Execution</dt>
+            <dd>One run of an agent, living on the AI platform. It has an id, and you can ask about it by that id at any time.</dd>
+          </div>
+          <div>
+            <dt>Queue</dt>
+            <dd>A to-do list stored in a database. Programs add items to it; workers take items off it. Because it is in a database, it survives restarts.</dd>
+          </div>
+          <div>
+            <dt>Job</dt>
+            <dd>One item on that to-do list, with a little data attached. A job can be scheduled for later rather than right now.</dd>
+          </div>
+          <div>
+            <dt>Worker</dt>
+            <dd>A program that takes jobs off a queue and does them. There may be many, and any of them may be restarted at any time.</dd>
+          </div>
+          <div>
+            <dt>Check</dt>
+            <dd>One glance at an execution: ask the platform how it is doing, then decide what to do about the answer. Takes milliseconds.</dd>
+          </div>
+          <div>
+            <dt>Deadline</dt>
+            <dd>The moment after which we stop waiting for a particular execution, however it is getting on.</dd>
+          </div>
+        </dl>
+
+        <p>
+          The whole design is: <strong>start an execution, then perform checks on it until it finishes or the
+          deadline passes</strong>. The interesting questions are where the waiting between checks lives, how
+          often to check, and what happens when the checker dies.
+        </p>
+      </section>
+
+      <section id="shape">
+        <h2 class="section-title"><span class="num">03</span> The shape of it</h2>
+        <h3>Four parts, and only one of them remembers anything</h3>
+
+        <figure>
+          <div class="plate">
+            <pre class="mermaid">
+flowchart LR
+    subgraph ENGINE["Workflow engine"]
+        RUN["A running workflow<br/>reaches an agent step"]
+    end
+
+    subgraph DB["Queue, stored in a database"]
+        Q1[("jobs that start executions")]
+        Q2[("jobs that check on them")]
+    end
+
+    subgraph WORKER["Worker"]
+        H1["starter"]
+        H2["checker"]
+    end
+
+    PLATFORM["AI platform<br/>where agents actually run"]
+
+    RUN -->|"please run this agent"| Q1
+    Q1 --> H1
+    H1 -->|"start it"| PLATFORM
+    PLATFORM -->|"here is its id"| H1
+    H1 -->|"check on it shortly"| Q2
+    Q2 --> H2
+    H2 -->|"how is it going?"| PLATFORM
+    PLATFORM -->|"still running / here is the result"| H2
+    H2 -->|"still running: check again later"| Q2
+    H2 -->|"finished: here is the outcome"| RUN
+            </pre>
+          </div>
+          <figcaption>
+            <strong>The system, whole.</strong> Notice that the checker's ordinary output is another job for
+            itself. That loop is the design: instead of one long wait, many short glances.
+          </figcaption>
+        </figure>
+
+        <p>
+          Two things are worth noticing in that picture.
+        </p>
+        <p>
+          <strong>The agent's work happens entirely on the platform.</strong> The worker holds nothing but an
+          id. If every worker were to disappear for ten minutes, the agent would carry on regardless, and the
+          result would be waiting when someone came back to ask.
+        </p>
+        <p>
+          <strong>Only one arrow creates anything.</strong> "Start it" brings an execution into being. Every
+          other arrow is a question or an answer. This matters enormously later: questions are safe to repeat,
+          and creation is not.
+        </p>
+      </section>
+
+      <section id="run">
+        <h2 class="section-title"><span class="num">04</span> A run, end to end</h2>
+        <h3>What actually happens, in order</h3>
+
+        <figure>
+          <div class="plate">
+            <pre class="mermaid">
+sequenceDiagram
+    autonumber
+    participant Q as Queue
+    participant W as Worker
+    participant P as AI platform
+
+    Q->>W: start an agent for this step
+    W->>P: run this agent, with this input
+    P-->>W: started, id is exec_01, status running
+    Note over W: The id is the valuable thing.<br/>Write it down, then schedule a check.
+    W->>Q: check on exec_01 in about 1 second
+
+    Q->>W: time to check
+    W->>P: how is exec_01 doing?
+    P-->>W: still running
+    W->>Q: check again in about 2 seconds
+
+    Q->>W: time to check
+    W->>P: how is exec_01 doing?
+    P-->>W: finished, here is the result
+    Note over W: Store the result against the step.<br/>Schedule nothing further.
+    W-->>Q: the step is done
+            </pre>
+          </div>
+          <figcaption>
+            <strong>A three-second agent, seen from outside.</strong> The worker was busy for a few
+            milliseconds in total, spread over three brief visits. In between it was free to do other work, or
+            to not exist at all.
+          </figcaption>
+        </figure>
+
+        <p>
+          Each visit follows the same tiny script: ask once, then decide exactly one thing. Either the
+          execution has finished, in which case record the outcome and stop; or it has not, in which case book
+          another visit for later; or time has run out, which has its own handling. That is the entire loop.
+        </p>
+
+        <figure>
+          <div class="plate">
+            <pre class="mermaid">
+flowchart TD
+    A["A check comes due"] --> B["Ask the platform<br/>how the execution is doing"]
+    B --> C{"What came back?"}
+
+    C -->|"finished"| D["Record the outcome"]
+    D --> E(["Stop. Nothing more to do."])
+
+    C -->|"still running"| F{"Past the deadline?"}
+    F -->|"no"| G["Book the next check,<br/>a little further out"]
+    F -->|"yes"| H["Ask the platform to stop it"]
+    H --> I["Record: ran out of time"]
+
+    C -->|"could not reach<br/>the platform"| J{"Past the deadline?"}
+    J -->|"no"| K["Try again shortly"]
+    J -->|"yes"| I
+
+    style D fill:#DCEFE5,stroke:#1C6B49
+    style I fill:#F8E3E6,stroke:#A12A3A
+    style G fill:#E0EFEF,stroke:#0B6E72
+            </pre>
+          </div>
+          <figcaption>
+            <strong>One check, four possible endings.</strong> The branch people find surprising is the last
+            one: failing to reach the platform says nothing about the agent, which is still running perfectly
+            well on the other side.
+          </figcaption>
+        </figure>
+      </section>
+
+      <section id="waiting">
+        <h2 class="section-title"><span class="num">05</span> Where waiting lives</h2>
+        <h3>The most important decision in the design</h3>
+        <p>
+          Suppose the next check should happen in thirty seconds. There are two ways to arrange that, and they
+          look equally reasonable until you examine them.
+        </p>
+        <p>
+          <strong>The obvious way:</strong> the program sleeps for thirty seconds, then checks again. The
+          waiting lives inside the running program, as a timer in memory.
+        </p>
+        <p>
+          <strong>The way used here:</strong> the program finishes, having left a note in the database that
+          says "check this execution, not before thirty seconds from now". The waiting lives in the database,
+          as a row.
+        </p>
+
+        <div class="scroller">
+          <table>
+            <thead>
+              <tr><th>&nbsp;</th><th>Sleeping in the program</th><th>A note in the database</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Where the wait exists</strong></td>
+                <td>A timer in one program's memory</td>
+                <td>A row, visible to every worker</td>
+              </tr>
+              <tr>
+                <td><strong>While waiting</strong></td>
+                <td>That program is occupied and cannot do anything else</td>
+                <td>Nothing is occupied at all</td>
+              </tr>
+              <tr>
+                <td><strong>If it is restarted</strong></td>
+                <td><span class="chip bad">The wait is lost</span> and the work stalls until something notices</td>
+                <td><span class="chip good">Nothing happens</span> &mdash; the row is still there, and any worker can pick it up</td>
+              </tr>
+              <tr>
+                <td><strong>Cost of 500 at once</strong></td>
+                <td>500 programs sleeping</td>
+                <td>500 rows, and a handful of brief visits per second</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="idea">
+          <span class="label">Why this is the crux</span>
+          <p>A sleeping program is a promise that only that program can keep. A row in a database is a promise anyone can keep.</p>
+          <p>Deployments, crashes and scaling all become uneventful the moment no promise depends on a particular process staying alive.</p>
+        </div>
+
+        <p>
+          There is a second benefit, easy to miss. When the waiting lives outside the program, the number of
+          executions you can supervise stops depending on how long agents take. A worker that would be tied up
+          by fifty simultaneous four-minute agents can, in this arrangement, look after thousands &mdash; because
+          it is only ever doing a few milliseconds of work at a time.
+        </p>
+      </section>
+
+      <section id="pacing">
+        <h2 class="section-title"><span class="num">06</span> Pacing the checks</h2>
+        <h3>Often at first, then increasingly rarely</h3>
+        <p>
+          How often should we look? Checking every second is wasteful: most of those questions get the answer
+          "still running". Checking every thirty seconds is rude to fast agents, which would finish in two
+          seconds and then sit around unnoticed for twenty-eight more.
+        </p>
+        <p>
+          The usual resolution is to start impatient and grow steadily more relaxed: wait one second, then two,
+          then four, eight, sixteen, and so on up to a sensible ceiling. Fast agents are caught almost at once;
+          slow ones settle into a cheap rhythm rather than being pestered.
+        </p>
+
+        <figure>
+          <div class="plate">
+            <pre class="mermaid">
+gantt
+    title Checking on a 47-second agent
+    dateFormat X
+    axisFormat %Ss
+    section The agent
+    running on the platform :done, 0, 47
+    section Waits between checks
+    1 second   :active, 0, 1
+    2 seconds  :active, 1, 3
+    4 seconds  :active, 3, 7
+    8 seconds  :active, 7, 15
+    16 seconds :active, 15, 31
+    30 seconds :active, 31, 47
+            </pre>
+          </div>
+          <figcaption>
+            <strong>Six questions instead of forty-seven.</strong> Each bar is a wait; a check happens where one
+            ends. Doubling the gap each time means the number of questions grows with the
+            <em>logarithm</em> of the agent's duration, not with the duration itself.
+          </figcaption>
+        </figure>
+
+        <p>
+          The ceiling matters as much as the doubling. Without it, an agent that runs for an hour would
+          eventually be checked once every twenty minutes, and a result that arrived early in that gap would sit
+          unnoticed. A cap of about half a minute keeps the worst-case delay small while keeping the number of
+          questions modest.
+        </p>
+      </section>
+
+      <section id="herd">
+        <h2 class="section-title"><span class="num">07</span> The stampede problem</h2>
+        <h3>Why the waits are deliberately imprecise</h3>
+        <p>
+          Here is a failure that only appears at scale. A workflow fans out and starts forty agents at the same
+          instant. Each one follows the same schedule: check after one second, then two, then four. Which means
+          all forty ask their questions at the same moments, forever. The platform sees nothing for four
+          seconds, then forty questions in the same breath, then nothing again.
+        </p>
+        <p>
+          Worse, the obvious defence makes it permanent. If the platform pushes back and everyone waits and
+          retries, they all wait the same amount and retry together &mdash; the herd is re-formed by the very
+          mechanism meant to disperse it.
+        </p>
+        <p>
+          The fix is to make each wait deliberately imprecise. Instead of waiting exactly four seconds, wait a
+          random amount between zero and four. The average pace is unchanged, the schedule is just as
+          predictable in aggregate, but the clients smear out across the interval instead of arriving together.
+        </p>
+
+        <figure>
+          <div class="plate">
+            <pre class="mermaid">
+gantt
+    title Four executions, checking in lockstep versus spread out
+    dateFormat X
+    axisFormat %Ss
+    section In lockstep
+    A waits :done, 0, 4
+    B waits :done, 0, 4
+    C waits :done, 0, 4
+    D waits :done, 0, 4
+    section Spread out
+    A waits :active, 0, 1
+    B waits :active, 0, 2
+    C waits :active, 0, 3
+    D waits :active, 0, 4
+            </pre>
+          </div>
+          <figcaption>
+            <strong>Same average rate, very different peak.</strong> In the top group every bar ends at the same
+            moment, so all four questions land together. In the bottom group the ends are staggered, and the
+            platform sees a steady trickle.
+          </figcaption>
+        </figure>
+
+        <div class="idea">
+          <span class="label">The general lesson</span>
+          <p>Synchronised clients are an emergent problem: each one behaves perfectly sensibly, and the system misbehaves anyway.</p>
+          <p>Randomness is not sloppiness here. It is the cheapest known way to stop independent actors from accidentally marching in step.</p>
+        </div>
+      </section>
+
+      <section id="crash">
+        <h2 class="section-title"><span class="num">08</span> When things crash</h2>
+        <h3>The one genuinely dangerous moment</h3>
+        <p>
+          Queues promise that a job will be delivered <em>at least</em> once. They cannot promise exactly once:
+          if a worker takes a job and then vanishes, the queue has no way to know whether it finished the work
+          first. So it hands the job to somebody else. This is the right behaviour &mdash; losing work would be
+          worse &mdash; but it means every job must be safe to do twice.
+        </p>
+        <p>
+          For checks, that is trivially true: asking a question twice is harmless. For starting an agent, it is
+          the whole problem. Consider this sequence:
+        </p>
+        <ul>
+          <li>The worker asks the platform to start an agent.</li>
+          <li>The platform does so, and begins running it.</li>
+          <li>The worker dies before it can write down the id.</li>
+        </ul>
+        <p>
+          The replacement worker now faces a question it genuinely cannot answer from its own knowledge: did
+          that request ever reach the platform? "I have no id written down" is consistent with both "nothing
+          happened" and "something happened and I lost the receipt". Guess wrong in one direction and you have
+          two agents running and two bills; guess wrong in the other and the step hangs forever.
+        </p>
+
+        <div class="idea warn">
+          <span class="label">The rule that resolves it</span>
+          <p>Never infer "nothing was started" from "I have no record of starting anything".</p>
+          <p>The worker's memory is not the authority. The platform is. So ask the platform &mdash; but ask in a way that cannot accidentally start a second run.</p>
+        </div>
+
+        <p>
+          That way is an <em class="term">idempotency key</em>: a label attached to the request, derived purely
+          from which step and which attempt this is, so that the replacement worker computes the identical
+          label. The platform promises that two requests bearing the same label produce one execution. The
+          second request does not start anything; it returns the first one's details.
+        </p>
+
+        <figure>
+          <div class="plate">
+            <pre class="mermaid">
+sequenceDiagram
+    autonumber
+    participant Q as Queue
+    participant W as Worker
+    participant P as AI platform
+
+    Q->>W: start an agent for step s1
+    Note over W: label = step s1, attempt 1
+    W->>P: start this agent, labelled s1/1
+    P-->>W: started, id exec_01
+    Note over W: Dies before writing the id down.
+    W--xW: crash
+
+    Q->>W: same job, handed to another worker
+    Note over W: Same step, same attempt,<br/>so the same label.
+    W->>P: start this agent, labelled s1/1
+    P-->>W: that label already ran: id exec_01
+    Note over P: Nothing new was started.
+    W->>Q: check on exec_01
+            </pre>
+          </div>
+          <figcaption>
+            <strong>The receipt you can always ask for again.</strong> The second request is not a retry in the
+            usual sense; it is a question the platform answers from its records, and the answer happens to be
+            the id the first worker never managed to save.
+          </figcaption>
+        </figure>
+
+        <p>
+          This is worth pausing on, because it is a general technique. Exactly-once execution across a network
+          is impossible for the sender to guarantee alone &mdash; it can never distinguish a lost request from a
+          lost reply. What <em>is</em> possible is for the receiver to recognise a repeat and decline to act
+          twice. The key is how the sender makes itself recognisable.
+        </p>
+      </section>
+
+      <section id="time">
+        <h2 class="section-title"><span class="num">09</span> When time runs out</h2>
+        <h3>Stopping is also a decision</h3>
+        <p>
+          Every step carries a deadline, fixed at the moment it starts and carried along with every subsequent
+          check. When a check finds that the deadline has passed and the agent is still going, two things
+          happen, in this order: the worker asks the platform to stop the execution, and then records the step
+          as having run out of time.
+        </p>
+        <p>
+          The order matters. Cancelling first means the agent stops consuming time and money on a result that
+          nobody is going to read. Recording the outcome second means the workflow finds out promptly either
+          way, because the cancellation is a courtesy, not a precondition.
+        </p>
+
+        <figure>
+          <div class="plate">
+            <pre class="mermaid">
+sequenceDiagram
+    autonumber
+    participant Q as Queue
+    participant W as Worker
+    participant P as AI platform
+
+    Note over W: The deadline was fixed when the step began<br/>and travels with every check.
+    Q->>W: time to check
+    W->>P: how is exec_01 doing?
+    P-->>W: still running
+    Note over W: The deadline has passed.
+    W->>P: please stop exec_01
+    alt the platform accepts
+        P-->>W: stopping it
+    else the request fails
+        P--xW: error
+        Note over W: Noted in the log, and otherwise ignored.
+    end
+    W-->>Q: step ran out of time
+    Note over W: No further checks are booked.
+            </pre>
+          </div>
+          <figcaption>
+            <strong>Giving up, carefully.</strong> A failed cancellation must not stop the step from being
+            marked as timed out; otherwise a sulking platform could keep a workflow waiting indefinitely.
+          </figcaption>
+        </figure>
+
+        <p>
+          Fixing the deadline once, at the beginning, is a small detail with a sharp edge behind it. If instead
+          each worker recalculated "now plus four minutes" when it picked the job up, a job that kept crashing
+          and being redelivered would keep pushing its own deadline into the future, and would never time out
+          at all.
+        </p>
+      </section>
+
+      <section id="endings">
+        <h2 class="section-title"><span class="num">10</span> How a run ends</h2>
+        <h3>Four endings, and one temptation to resist</h3>
+
+        <figure>
+          <div class="plate">
+            <pre class="mermaid">
+stateDiagram-v2
+    direction LR
+    [*] --> waiting: accepted by the platform
+    waiting --> running
+    running --> succeeded: produced a result
+    running --> failed: something went wrong
+    running --> stopped: we asked it to stop
+    succeeded --> [*]
+    failed --> [*]
+    stopped --> [*]
+
+    note right of running
+        Checks happen only
+        during these two states
+    end note
+
+    note right of failed
+        Reported upward.
+        Never quietly re-run.
+    end note
+            </pre>
+          </div>
+          <figcaption>
+            <strong>The life of one execution.</strong> The last three states are final &mdash; once an execution
+            reaches one, it will never change again, so the worker records the outcome and stops looking.
+          </figcaption>
+        </figure>
+
+        <p>
+          Failures come in two flavours, and the platform says which is which. Some are worth another go: the
+          model provider was briefly overloaded, a rate limit was hit. Others will fail identically forever: the
+          input did not match what the agent expects. Retrying the second kind just burns money to arrive at
+          the same place.
+        </p>
+
+        <div class="idea warn">
+          <span class="label">The temptation</span>
+          <p>When a check discovers a failure that could succeed on a retry, the obvious move is to start the agent again right there. The worker never does this.</p>
+          <p>Retrying is a policy decision about the <em>workflow</em> &mdash; how many attempts are worth paying for, whether a fallback path is better &mdash; and it belongs with whoever owns that policy. The worker reports what happened and lets that layer decide.</p>
+        </div>
+
+        <p>
+          When that layer does decide to try again, it does so by creating a genuinely new attempt. That new
+          attempt computes a different label, so the platform treats it as new work rather than replaying the
+          old failure. The distinction between "the same attempt, asked about again" and "a deliberate new
+          attempt" is carried entirely by that label, which is why it is built the way it is.
+        </p>
+
+        <div class="scroller">
+          <table>
+            <thead>
+              <tr><th>What the platform says</th><th>What the workflow is told</th><th>Start another run?</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>Finished with a result</td><td>Succeeded, here is the output</td><td><span class="chip bad">No</span></td></tr>
+              <tr><td>Failed, might work next time</td><td>Failed &mdash; and worth retrying</td><td><span class="chip bad">No</span></td></tr>
+              <tr><td>Failed, will always fail</td><td>Failed &mdash; do not bother retrying</td><td><span class="chip bad">No</span></td></tr>
+              <tr><td>Stopped at our request</td><td>Cancelled, which is not a failure</td><td><span class="chip bad">No</span></td></tr>
+              <tr><td>Still going when time ran out</td><td>Timed out</td><td><span class="chip bad">No</span></td></tr>
+              <tr><td>Cannot reach the platform</td><td><em>Nothing yet</em> &mdash; ask again shortly</td><td><span class="chip bad">No</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="cost">
+        <h2 class="section-title"><span class="num">11</span> What it costs</h2>
+        <h3>Some arithmetic, because the intuitions mislead</h3>
+        <p>
+          "Polling is wasteful" is received wisdom, and at a fixed one-second interval it would be. With
+          doubling and a ceiling, the arithmetic looks different.
+        </p>
+
+        <div class="scroller">
+          <table>
+            <thead>
+              <tr><th>Agent takes</th><th class="num">Fixed 1s checks</th><th class="num">Doubling, capped at 30s</th><th>Difference</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>3 seconds</td><td class="num">3</td><td class="num">2</td><td>Barely matters</td></tr>
+              <tr><td>47 seconds</td><td class="num">47</td><td class="num">6</td><td><span class="chip good">8&times; fewer</span></td></tr>
+              <tr><td>5 minutes</td><td class="num">300</td><td class="num">14</td><td><span class="chip good">21&times; fewer</span></td></tr>
+              <tr><td>30 minutes</td><td class="num">1800</td><td class="num">64</td><td><span class="chip good">28&times; fewer</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p>
+          Put that next to the number of agents you expect to have running at once. Five hundred simultaneous
+          executions, each being checked roughly every thirty seconds once they settle, comes to about
+          <strong>seventeen questions per second</strong> across the whole fleet. That is a rounding error for
+          a web service, and it buys a system with no open connections to lose and no timers to forget.
+        </p>
+        <p>
+          The comparison that really matters is not against a hypothetical push-based design, but against the
+          sleeping version of this same design. Both ask the platform a similar number of questions. Only one
+          of them ties up a process per execution while doing it.
+        </p>
+      </section>
+
+      <section id="limits">
+        <h2 class="section-title"><span class="num">12</span> Where the limits are</h2>
+        <h3>What this design does not give you</h3>
+        <p>
+          Every design buys something and gives something up. Three things are given up here, and it is better
+          to know them in advance than to discover them.
+        </p>
+
+        <div class="glance">
+          <div>
+            <dt>No progress, only presence</dt>
+            <dd>Between checks an execution is either running or finished. There is no "62% done" and no partial output, so a long-running agent looks identical at ten seconds and ten minutes.</dd>
+          </div>
+          <div>
+            <dt>Answers arrive a little late</dt>
+            <dd>A result that appears just after a check is not noticed until the next one, which near the ceiling can be up to half a minute later. Fine for a workflow step, wrong for anything interactive.</dd>
+          </div>
+          <div>
+            <dt>Fan-out multiplies everything</dt>
+            <dd>A step that runs an agent over two hundred items means two hundred executions, each with its own chain of checks. Nothing breaks, but the request volume is worth a thought.</dd>
+          </div>
+        </div>
+
+        <p>
+          Each of these has an obvious remedy if it ever becomes painful &mdash; progress events, a push
+          notification for the impatient cases, a batch call for fan-out. None of them is needed for a workflow
+          engine running agent steps, and each would add a moving part. The version described here is the one
+          that has the fewest ways to go wrong.
+        </p>
+
+        <div class="idea">
+          <span class="label">The whole thing in four sentences</span>
+          <p>Ask the platform to start an agent, and it hands back an id straight away. Keep that id on a queued job, and check on it now and then &mdash; often at first, then more sparingly, with a dash of randomness so that many steps do not synchronise.</p>
+          <p>If a worker dies, the job comes back and the same label gets the same execution rather than a second one. If the deadline passes, stop the execution and say so &mdash; and never quietly run an agent twice.</p>
+        </div>
+      </section>
+
+      <footer>
+        <p>
+          A conceptual introduction. The precise version &mdash; exact field names, defaults, failure handling
+          and acceptance criteria &mdash; lives alongside this page in the implementation specification.
+        </p>
+      </footer>
+    </main>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/11.15.0/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, securityLevel: "strict" });</script>
+</body>
+</html>
