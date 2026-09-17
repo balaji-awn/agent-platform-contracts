@@ -13,6 +13,7 @@ The contract between **Asoar** (workflow engine) and the **agent platform** serv
 | `docs/agent-execution-worker.html` | The same spec as an illustrated page: all 34 requirements plus block diagram, sequence flows, poll decision tree, backoff schedule | Draft |
 | `docs/agent-execution-explained.html` | Conceptual introduction for any reader: why polling, where the waiting lives, crash safety and cost, with diagrams and no requirement IDs | Draft |
 | `docs/agent-completion-callback.html` | Design note weighing agent-initiated completion over MCP: what it buys, its failure modes, the hostile-input risk, and a hint-then-verify alternative | Draft |
+| `docs/schema-builder-ui.html` | Authoring UI for agent input and output schemas: the flat row-to-JSON-Schema builder, its states, validation rules, and the contract constraints behind them | Draft |
 | `schemas/agent-node.schema.json` | Agent node as stored in Asoar workflow JSON | Draft |
 | `schemas/agent-version-contract.schema.json` | Platform response for one agent version | Draft |
 | `api/openapi.yaml` | Platform API that Asoar consumes (OpenAPI 3.1) | Draft |

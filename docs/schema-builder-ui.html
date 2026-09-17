@@ -1,0 +1,1244 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Schema Builder</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500&display=swap">
+<style>
+  :root {
+    --ground: #F5F7F8;
+    --surface: #FFFFFF;
+    --surface-2: #EDF1F2;
+    --ink: #121A1D;
+    --ink-2: #41525A;
+    --ink-3: #6B7D85;
+    --line: #D8E0E3;
+    --line-strong: #B4C3C8;
+    --accent: #0B6E72;
+    --accent-ink: #06565A;
+    --accent-wash: #E0EFEF;
+    --amber: #8F5400;
+    --amber-wash: #F8EBD8;
+    --crimson: #A12A3A;
+    --crimson-wash: #F8E3E6;
+    --green: #1C6B49;
+    --green-wash: #DCEFE5;
+    --radius: 10px;
+    --measure: 68ch;
+    color-scheme: light;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0D1416;
+      --surface: #121D20;
+      --surface-2: #18262A;
+      --ink: #E4EDEF;
+      --ink-2: #AABEC3;
+      --ink-3: #7F979D;
+      --line: #233438;
+      --line-strong: #384E53;
+      --accent: #5CC4C1;
+      --accent-ink: #8FDAD7;
+      --accent-wash: #0F2C2E;
+      --amber: #E2A55E;
+      --amber-wash: #2C2317;
+      --crimson: #EA8D98;
+      --crimson-wash: #31191D;
+      --green: #62BC8F;
+      --green-wash: #13291F;
+      color-scheme: dark;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground: #0D1416;
+    --surface: #121D20;
+    --surface-2: #18262A;
+    --ink: #E4EDEF;
+    --ink-2: #AABEC3;
+    --ink-3: #7F979D;
+    --line: #233438;
+    --line-strong: #384E53;
+    --accent: #5CC4C1;
+    --accent-ink: #8FDAD7;
+    --accent-wash: #0F2C2E;
+    --amber: #E2A55E;
+    --amber-wash: #2C2317;
+    --crimson: #EA8D98;
+    --crimson-wash: #31191D;
+    --green: #62BC8F;
+    --green-wash: #13291F;
+    color-scheme: dark;
+  }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 16px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding-inline: 20px;
+    padding-block: 56px 72px;
+  }
+
+  h1, h2, h3, .eyebrow, .chip, .toc a, .idea .label {
+    font-family: Archivo, "IBM Plex Sans", sans-serif;
+  }
+
+  code, kbd, .mono {
+    font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  .masthead {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding-bottom: 32px;
+    border-bottom: 2px solid var(--ink);
+  }
+
+  .eyebrow {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent-ink);
+    margin: 0;
+  }
+
+  h1 {
+    font-size: clamp(32px, 5vw, 46px);
+    font-weight: 700;
+    line-height: 1.08;
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+    margin: 0;
+  }
+
+  .lede {
+    max-width: var(--measure);
+    font-size: 18px;
+    color: var(--ink-2);
+    margin: 0;
+  }
+
+  .verdict {
+    margin: 8px 0 0;
+    padding: 16px 20px;
+    background: var(--accent-wash);
+    border-radius: var(--radius);
+    max-width: var(--measure);
+  }
+
+  .verdict p { margin: 0; font-size: 15.5px; color: var(--ink); }
+  .verdict p + p { margin-top: 8px; }
+
+  .layout {
+    display: grid;
+    gap: 48px;
+    margin-top: 48px;
+    align-items: start;
+  }
+
+  @media (min-width: 960px) {
+    .layout { grid-template-columns: 210px minmax(0, 1fr); }
+    .toc { position: sticky; top: 28px; }
+  }
+
+  .toc h2 {
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin: 0 0 12px;
+  }
+
+  .toc ol {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    counter-reset: toc;
+  }
+
+  .toc a {
+    display: flex;
+    gap: 10px;
+    padding: 5px 8px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--ink-2);
+    text-decoration: none;
+    counter-increment: toc;
+  }
+
+  .toc a::before {
+    content: counter(toc);
+    color: var(--ink-3);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .toc a:hover { background: var(--surface-2); color: var(--accent-ink); }
+
+  main {
+    display: flex;
+    flex-direction: column;
+    gap: 56px;
+    min-width: 0;
+  }
+
+  section { scroll-margin-top: 24px; }
+
+  h2.section-title {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin: 0 0 8px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  h2.section-title .num { color: var(--accent); font-variant-numeric: tabular-nums; }
+
+  h3 {
+    font-size: 23px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    line-height: 1.25;
+    text-wrap: balance;
+    margin: 0 0 12px;
+  }
+
+  h4 {
+    font-family: Archivo, sans-serif;
+    font-size: 15px;
+    font-weight: 600;
+    margin: 26px 0 8px;
+  }
+
+  p, li { max-width: var(--measure); }
+  main p { margin: 0 0 15px; color: var(--ink-2); }
+  main ul { margin: 0 0 15px; padding-left: 20px; color: var(--ink-2); }
+  main li { margin-bottom: 7px; }
+  strong { color: var(--ink); font-weight: 600; }
+
+  code {
+    font-size: 0.9em;
+    background: var(--surface-2);
+    color: var(--ink);
+    padding: 1px 5px;
+    border-radius: 4px;
+  }
+
+  a { color: var(--accent-ink); }
+
+  .idea {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 var(--radius) var(--radius) 0;
+    padding: 16px 20px;
+    margin: 22px 0;
+  }
+
+  .idea .label {
+    display: block;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent-ink);
+    margin-bottom: 6px;
+  }
+
+  .idea p { margin: 0; color: var(--ink); font-size: 15.5px; }
+  .idea p + p { margin-top: 8px; color: var(--ink-2); font-size: 14.5px; }
+
+  .idea.warn { border-left-color: var(--crimson); }
+  .idea.warn .label { color: var(--crimson); }
+  .idea.good { border-left-color: var(--green); }
+  .idea.good .label { color: var(--green); }
+
+  .glance {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    overflow: hidden;
+    margin: 24px 0;
+  }
+
+  .glance div {
+    background: var(--surface);
+    padding: 18px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .glance dt {
+    font-family: Archivo, sans-serif;
+    font-weight: 600;
+    font-size: 15px;
+    color: var(--ink);
+  }
+
+  .glance dd {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.55;
+    color: var(--ink-2);
+    max-width: none;
+  }
+
+  .scroller {
+    overflow-x: auto;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--surface);
+    margin: 20px 0;
+  }
+
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+
+  th, td {
+    text-align: left;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }
+
+  th {
+    font-family: Archivo, sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    white-space: nowrap;
+    background: var(--surface-2);
+  }
+
+  tbody tr:last-child td { border-bottom: none; }
+  td.code, th.num, td.num {
+    font-family: "IBM Plex Mono", monospace;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  td.wrap { white-space: normal; }
+
+  .chip {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    padding: 2px 8px;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+
+  .chip.good { background: var(--green-wash); color: var(--green); }
+  .chip.bad { background: var(--crimson-wash); color: var(--crimson); }
+  .chip.mid { background: var(--amber-wash); color: var(--amber); }
+  .chip.neutral { background: var(--surface-2); color: var(--ink-2); }
+
+  figure { margin: 0 0 28px; }
+
+  .plate {
+    background: #FBFCFD;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius);
+    padding: 18px 16px;
+    overflow-x: auto;
+  }
+
+  .plate pre.mermaid { margin: 0; min-width: 620px; }
+
+  figcaption {
+    font-size: 13.5px;
+    color: var(--ink-3);
+    margin-top: 10px;
+    max-width: var(--measure);
+  }
+
+  /* ---- JSON code blocks ---- */
+
+  pre.code {
+    margin: 0;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 16px 18px;
+    overflow-x: auto;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12.5px;
+    line-height: 1.62;
+    color: var(--ink-2);
+  }
+
+  pre.code .k { color: var(--accent-ink); }
+  pre.code .s { color: var(--green); }
+  pre.code .n { color: var(--amber); }
+  pre.code .c { color: var(--ink-3); font-style: italic; }
+
+  .pair { display: grid; gap: 18px; margin: 22px 0; align-items: start; }
+  @media (min-width: 880px) { .pair { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+
+  .pair-label {
+    font-family: Archivo, sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin: 0 0 8px;
+  }
+
+  /* ---- UI mockups ---- */
+
+  .ui {
+    min-width: 660px;
+    background: var(--surface);
+    border: 1px solid var(--line-strong);
+    border-radius: 8px;
+    overflow: hidden;
+    font-size: 13px;
+    color: var(--ink);
+  }
+
+  .ui + .ui { margin-top: 14px; }
+
+  .ui-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 11px 14px;
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--line);
+  }
+
+  .ui-check {
+    width: 15px;
+    height: 15px;
+    flex: none;
+    border: 1.5px solid var(--line-strong);
+    border-radius: 3px;
+    background: var(--surface);
+    display: inline-grid;
+    place-content: center;
+    font-size: 10px;
+    line-height: 1;
+    color: transparent;
+  }
+
+  .ui-check.on {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #FFFFFF;
+  }
+
+  .ui-title { font-family: Archivo, sans-serif; font-weight: 600; font-size: 13.5px; }
+  .ui-sub { color: var(--ink-3); font-size: 12px; }
+
+  .ui-btn {
+    margin-left: auto;
+    border: 1px solid var(--accent);
+    color: var(--accent-ink);
+    background: transparent;
+    border-radius: 6px;
+    padding: 3px 10px;
+    font-family: Archivo, sans-serif;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .ui-btn.ghost { border-color: var(--line-strong); color: var(--ink-3); }
+
+  .ui-body { padding: 12px 14px; }
+
+  .ui-grid { display: grid; grid-template-columns: 1.05fr 1.05fr 1.5fr 0.85fr 46px 30px; }
+
+  .ui-grid > div {
+    padding: 5px 5px;
+    display: flex;
+    align-items: center;
+  }
+
+  .ui-grid .ui-th {
+    font-family: Archivo, sans-serif;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    padding-bottom: 7px;
+  }
+
+  .ui-field {
+    width: 100%;
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    background: var(--surface);
+    padding: 5px 8px;
+    color: var(--ink);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .ui-field.mono { font-family: "IBM Plex Mono", monospace; font-size: 12px; }
+  .ui-field.ph { color: var(--ink-3); }
+  .ui-field.sel { display: flex; justify-content: space-between; gap: 6px; }
+  .ui-field.sel::after { content: "\25BE"; color: var(--ink-3); }
+  .ui-field.bad { border-color: var(--crimson); background: var(--crimson-wash); }
+
+  .ui-center { justify-content: center; }
+  .ui-del { color: var(--ink-3); font-size: 13px; }
+
+  .ui-msg {
+    grid-column: 1 / -1;
+    color: var(--crimson);
+    font-size: 11.5px;
+    padding: 0 5px 6px;
+    display: block;
+  }
+
+  .ui-empty {
+    border: 1px dashed var(--line-strong);
+    border-radius: 6px;
+    padding: 18px;
+    text-align: center;
+    color: var(--ink-3);
+    font-size: 12.5px;
+  }
+
+  .ui-off { padding: 12px 14px; color: var(--ink-3); font-size: 12.5px; }
+
+  .ui-banner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    background: var(--amber-wash);
+    color: var(--amber);
+    font-size: 12px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .ui-ro .ui-field { border-color: transparent; background: transparent; padding-left: 0; }
+
+  footer {
+    margin-top: 64px;
+    padding-top: 20px;
+    border-top: 1px solid var(--line);
+    font-size: 13px;
+    color: var(--ink-3);
+  }
+
+  footer p { max-width: var(--measure); margin: 0; }
+
+  a:focus-visible, .toc a:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+</style>
+<style>body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+</head>
+<body>
+
+<div class="page">
+  <header class="masthead">
+    <p class="eyebrow">Design note &middot; authoring UI for agent input and output schemas</p>
+    <h1>The Schema Builder</h1>
+    <p class="lede">
+      Every agent on the platform declares an input schema and an output schema. Today they are hand-written
+      JSON Schema. This note specifies the UI that lets an author build them from rows in a table &mdash; and
+      the rules that turn those rows into a contract Asoar can bind against.
+    </p>
+    <div class="verdict">
+      <p>
+        <strong>The shape.</strong> Two sections, Input and Output, each behind an enable checkbox. Each holds
+        a flat list of fields. Each field is four controls and a toggle: <strong>name</strong>,
+        <strong>varName</strong>, <strong>description</strong>, <strong>datatype</strong>, <strong>required</strong>.
+        No nesting, at any depth.
+      </p>
+      <p>
+        <strong>The constraint that drives everything else.</strong> <code>varName</code> is not a label. It
+        becomes the JSON Schema property key, which is the name Asoar binds to downstream. Get it wrong and
+        the field is unreachable.
+      </p>
+    </div>
+  </header>
+
+  <div class="layout">
+    <nav class="toc" aria-label="Contents">
+      <h2>Contents</h2>
+      <ol>
+        <li><a href="#sees">What the author sees</a></li>
+        <li><a href="#controls">The four controls</a></li>
+        <li><a href="#worked">A worked example</a></li>
+        <li><a href="#states">Every state</a></li>
+        <li><a href="#validation">Validation</a></li>
+        <li><a href="#contract">Rules from the contract</a></li>
+        <li><a href="#subset">What it cannot express</a></li>
+        <li><a href="#settle">What to settle</a></li>
+      </ol>
+    </nav>
+
+    <main>
+
+      <section id="sees">
+        <h2 class="section-title"><span class="num">01</span> What the author sees</h2>
+        <h3>One panel, two independent halves</h3>
+
+        <p>
+          The builder lives on the agent's draft editing screen. Input and Output are symmetrical and
+          independent: an agent may declare both, either, or neither. Each half is collapsed to a single
+          checkbox row until it is enabled.
+        </p>
+
+        <figure>
+          <div class="plate">
+            <div class="ui">
+              <div class="ui-head">
+                <span class="ui-check on">&#10003;</span>
+                <span class="ui-title">Input schema</span>
+                <span class="ui-sub">3 fields</span>
+                <span class="ui-btn">+ Add field</span>
+              </div>
+              <div class="ui-body">
+                <div class="ui-grid">
+                  <div class="ui-th">Name</div>
+                  <div class="ui-th">varName</div>
+                  <div class="ui-th">Description</div>
+                  <div class="ui-th">Datatype</div>
+                  <div class="ui-th ui-center">Req</div>
+                  <div class="ui-th"></div>
+
+                  <div><span class="ui-field">Alert ID</span></div>
+                  <div><span class="ui-field mono">alert_id</span></div>
+                  <div><span class="ui-field">SIEM alert identifier.</span></div>
+                  <div><span class="ui-field sel">string</span></div>
+                  <div class="ui-center"><span class="ui-check on">&#10003;</span></div>
+                  <div class="ui-center"><span class="ui-del">&#9003;</span></div>
+
+                  <div><span class="ui-field">Reported URL</span></div>
+                  <div><span class="ui-field mono">reported_url</span></div>
+                  <div><span class="ui-field">The URL the user reported.</span></div>
+                  <div><span class="ui-field sel">string</span></div>
+                  <div class="ui-center"><span class="ui-check on">&#10003;</span></div>
+                  <div class="ui-center"><span class="ui-del">&#9003;</span></div>
+
+                  <div><span class="ui-field">Priority</span></div>
+                  <div><span class="ui-field mono">priority</span></div>
+                  <div><span class="ui-field">1&ndash;5, where 1 is most urgent.</span></div>
+                  <div><span class="ui-field sel">integer</span></div>
+                  <div class="ui-center"><span class="ui-check">&#10003;</span></div>
+                  <div class="ui-center"><span class="ui-del">&#9003;</span></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="ui">
+              <div class="ui-head">
+                <span class="ui-check">&#10003;</span>
+                <span class="ui-title">Output schema</span>
+                <span class="ui-sub">not defined</span>
+                <span class="ui-btn ghost">+ Add field</span>
+              </div>
+              <div class="ui-off">
+                Turn this on to declare what the agent returns. While it is off the agent publishes an empty
+                object schema and no workflow can read anything from it.
+              </div>
+            </div>
+          </div>
+          <figcaption>
+            The populated input half and the disabled output half. The <strong>+ Add field</strong> button
+            appends one row; rows are reorderable by drag and removable by the trailing control.
+          </figcaption>
+        </figure>
+
+        <div class="idea">
+          <span class="label">Why a checkbox rather than "add a field to begin"</span>
+          <p>
+            An empty list and a deliberately empty schema look identical but mean different things. The
+            checkbox records intent: <em>off</em> means "this agent takes no structured input", which is a
+            publishable statement. An enabled section with no rows is an error, not a shrug.
+          </p>
+        </div>
+      </section>
+
+      <section id="controls">
+        <h2 class="section-title"><span class="num">02</span> The four controls</h2>
+        <h3>Where each one lands in the emitted schema</h3>
+
+        <p>
+          A row is not a free-form record. Each control has exactly one destination, and two of them are
+          load-bearing for systems far downstream of this screen.
+        </p>
+
+        <div class="scroller">
+          <table>
+            <thead>
+              <tr>
+                <th>Control</th>
+                <th>Lands at</th>
+                <th>Omitted when</th>
+                <th>Consequence</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="code">varName</td>
+                <td class="code">the property key</td>
+                <td>never &mdash; mandatory</td>
+                <td class="wrap">The name Asoar binds to. Changing it after publish breaks every workflow pinned to the old version.</td>
+              </tr>
+              <tr>
+                <td class="code">name</td>
+                <td class="code">properties.&lt;varName&gt;.title</td>
+                <td>blank</td>
+                <td class="wrap">Display label in Asoar's Inputs and Outputs tabs. Never emitted as an empty string.</td>
+              </tr>
+              <tr>
+                <td class="code">description</td>
+                <td class="code">properties.&lt;varName&gt;.description</td>
+                <td>blank</td>
+                <td class="wrap">Read by the model when producing structured output. Functional, not decorative.</td>
+              </tr>
+              <tr>
+                <td class="code">datatype</td>
+                <td class="code">properties.&lt;varName&gt;.type</td>
+                <td>never &mdash; defaults to <code>string</code></td>
+                <td class="wrap">Type-checked by Asoar's publish validator against the upstream node's output.</td>
+              </tr>
+              <tr>
+                <td class="code">required</td>
+                <td class="code">membership of required[]</td>
+                <td>unchecked</td>
+                <td class="wrap">Checked by default. Lets the publish validator reject a node that leaves the field unbound.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h4>The section itself</h4>
+
+        <div class="scroller">
+          <table>
+            <thead>
+              <tr><th>Section state</th><th>Emitted schema</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Enabled, one or more rows</td>
+                <td class="code">{ type, properties, required, additionalProperties: false }</td>
+              </tr>
+              <tr>
+                <td>Enabled, zero rows</td>
+                <td class="wrap"><span class="chip bad">blocks publish</span> &nbsp;"Input is enabled but has no fields."</td>
+              </tr>
+              <tr>
+                <td>Disabled</td>
+                <td class="code">{ "type": "object", "properties": {}, "additionalProperties": false }</td>
+              </tr>
+              <tr>
+                <td>No row is required</td>
+                <td class="wrap"><code>required</code> is omitted entirely, never emitted as <code>[]</code></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="idea warn">
+          <span class="label">Disabled does not mean absent</span>
+          <p>
+            <code>input_schema</code> and <code>output_schema</code> are both in the <code>required</code> list of
+            <code>agent-version-contract.schema.json</code>. A contract that omits either one is invalid. An
+            unchecked box must therefore still emit the empty object schema above.
+          </p>
+        </div>
+
+        <h4>Datatypes</h4>
+
+        <p>
+          Version one offers four, all primitive: <code>string</code>, <code>number</code>, <code>integer</code>,
+          <code>boolean</code>. The picker has no array, object, or enum entry. Section 07 covers what that
+          rules out and the order in which to add more.
+        </p>
+      </section>
+
+      <section id="worked">
+        <h2 class="section-title"><span class="num">03</span> A worked example</h2>
+        <h3>Six rows, two schemas</h3>
+
+        <p>
+          A phishing-triage agent. The rows on the left are exactly what the author typed; the JSON on the
+          right is what the builder emits and the platform stores.
+        </p>
+
+        <div class="pair">
+          <div>
+            <p class="pair-label">Input rows</p>
+            <div class="scroller" style="margin-top:0">
+              <table>
+                <thead>
+                  <tr><th>Name</th><th>varName</th><th>Type</th><th>Req</th></tr>
+                </thead>
+                <tbody>
+                  <tr><td>Alert ID</td><td class="code">alert_id</td><td class="code">string</td><td><span class="chip good">yes</span></td></tr>
+                  <tr><td>Reported URL</td><td class="code">reported_url</td><td class="code">string</td><td><span class="chip good">yes</span></td></tr>
+                  <tr><td>Priority</td><td class="code">priority</td><td class="code">integer</td><td><span class="chip neutral">no</span></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div>
+            <p class="pair-label">Emitted input_schema</p>
+<pre class="code">{
+  <span class="k">"type"</span>: <span class="s">"object"</span>,
+  <span class="k">"properties"</span>: {
+    <span class="k">"alert_id"</span>: {
+      <span class="k">"title"</span>: <span class="s">"Alert ID"</span>,
+      <span class="k">"description"</span>: <span class="s">"SIEM alert identifier."</span>,
+      <span class="k">"type"</span>: <span class="s">"string"</span>
+    },
+    <span class="k">"reported_url"</span>: {
+      <span class="k">"title"</span>: <span class="s">"Reported URL"</span>,
+      <span class="k">"description"</span>: <span class="s">"The URL the user reported."</span>,
+      <span class="k">"type"</span>: <span class="s">"string"</span>
+    },
+    <span class="k">"priority"</span>: {
+      <span class="k">"title"</span>: <span class="s">"Priority"</span>,
+      <span class="k">"description"</span>: <span class="s">"1-5, where 1 is most urgent."</span>,
+      <span class="k">"type"</span>: <span class="s">"integer"</span>
+    }
+  },
+  <span class="k">"required"</span>: [<span class="s">"alert_id"</span>, <span class="s">"reported_url"</span>],
+  <span class="k">"additionalProperties"</span>: <span class="n">false</span>
+}</pre>
+          </div>
+        </div>
+
+        <div class="pair">
+          <div>
+            <p class="pair-label">Output rows</p>
+            <div class="scroller" style="margin-top:0">
+              <table>
+                <thead>
+                  <tr><th>Name</th><th>varName</th><th>Type</th><th>Req</th></tr>
+                </thead>
+                <tbody>
+                  <tr><td>Verdict</td><td class="code">verdict</td><td class="code">string</td><td><span class="chip good">yes</span></td></tr>
+                  <tr><td>Confidence</td><td class="code">confidence</td><td class="code">number</td><td><span class="chip good">yes</span></td></tr>
+                  <tr><td>Needs escalation</td><td class="code">needs_escalation</td><td class="code">boolean</td><td><span class="chip good">yes</span></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div>
+            <p class="pair-label">Emitted output_schema</p>
+<pre class="code">{
+  <span class="k">"type"</span>: <span class="s">"object"</span>,
+  <span class="k">"properties"</span>: {
+    <span class="k">"verdict"</span>: {
+      <span class="k">"title"</span>: <span class="s">"Verdict"</span>,
+      <span class="k">"description"</span>: <span class="s">"benign, suspicious, or malicious."</span>,
+      <span class="k">"type"</span>: <span class="s">"string"</span>
+    },
+    <span class="k">"confidence"</span>: {
+      <span class="k">"title"</span>: <span class="s">"Confidence"</span>,
+      <span class="k">"description"</span>: <span class="s">"0.0 to 1.0."</span>,
+      <span class="k">"type"</span>: <span class="s">"number"</span>
+    },
+    <span class="k">"needs_escalation"</span>: {
+      <span class="k">"title"</span>: <span class="s">"Needs escalation"</span>,
+      <span class="k">"description"</span>: <span class="s">"True when a human must review."</span>,
+      <span class="k">"type"</span>: <span class="s">"boolean"</span>
+    }
+  },
+  <span class="k">"required"</span>: [<span class="s">"verdict"</span>, <span class="s">"confidence"</span>, <span class="s">"needs_escalation"</span>],
+  <span class="k">"additionalProperties"</span>: <span class="n">false</span>
+}</pre>
+          </div>
+        </div>
+
+        <div class="idea">
+          <span class="label">Where those names surface</span>
+          <p>
+            Once published, an Asoar workflow node pinned to this version binds its inputs by key and reads
+            its outputs the same way: <code>$nodes.triage.output.verdict</code>. The
+            <code>varName</code> column is the whole of that vocabulary.
+          </p>
+        </div>
+      </section>
+
+      <section id="states">
+        <h2 class="section-title"><span class="num">04</span> Every state</h2>
+        <h3>Empty, invalid, and read-only</h3>
+
+        <h4>Enabled with no rows</h4>
+        <figure>
+          <div class="plate">
+            <div class="ui">
+              <div class="ui-head">
+                <span class="ui-check on">&#10003;</span>
+                <span class="ui-title">Output schema</span>
+                <span class="ui-sub">0 fields</span>
+                <span class="ui-btn">+ Add field</span>
+              </div>
+              <div class="ui-body">
+                <div class="ui-empty">No fields yet. Add one to describe what this agent returns.</div>
+              </div>
+            </div>
+          </div>
+          <figcaption>
+            Permitted while drafting, refused at publish. The empty state names the next action rather than
+            describing the absence.
+          </figcaption>
+        </figure>
+
+        <h4>Invalid rows</h4>
+        <figure>
+          <div class="plate">
+            <div class="ui">
+              <div class="ui-head">
+                <span class="ui-check on">&#10003;</span>
+                <span class="ui-title">Input schema</span>
+                <span class="ui-sub">2 problems</span>
+                <span class="ui-btn">+ Add field</span>
+              </div>
+              <div class="ui-body">
+                <div class="ui-grid">
+                  <div class="ui-th">Name</div>
+                  <div class="ui-th">varName</div>
+                  <div class="ui-th">Description</div>
+                  <div class="ui-th">Datatype</div>
+                  <div class="ui-th ui-center">Req</div>
+                  <div class="ui-th"></div>
+
+                  <div><span class="ui-field">Reported URL</span></div>
+                  <div><span class="ui-field mono bad">Reported URL</span></div>
+                  <div><span class="ui-field">The URL the user reported.</span></div>
+                  <div><span class="ui-field sel">string</span></div>
+                  <div class="ui-center"><span class="ui-check on">&#10003;</span></div>
+                  <div class="ui-center"><span class="ui-del">&#9003;</span></div>
+                  <span class="ui-msg">Use lowercase letters, digits and underscores, starting with a letter. Try <strong>reported_url</strong>.</span>
+
+                  <div><span class="ui-field">Alert reference</span></div>
+                  <div><span class="ui-field mono bad">alert_id</span></div>
+                  <div><span class="ui-field ph">Optional</span></div>
+                  <div><span class="ui-field sel">string</span></div>
+                  <div class="ui-center"><span class="ui-check on">&#10003;</span></div>
+                  <div class="ui-center"><span class="ui-del">&#9003;</span></div>
+                  <span class="ui-msg"><strong>alert_id</strong> is already used by another field in this section.</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <figcaption>
+            Errors are per row and inline. The invalid-identifier message offers the corrected value rather
+            than restating the rule alone &mdash; most authors type a label into the wrong column.
+          </figcaption>
+        </figure>
+
+        <h4>A published version</h4>
+        <figure>
+          <div class="plate">
+            <div class="ui ui-ro">
+              <div class="ui-banner">
+                <span>&#9432;</span>
+                <span>Version 3 is published and immutable. Create version 4 to change its schema.</span>
+                <span class="ui-btn" style="margin-left:auto">Create version 4</span>
+              </div>
+              <div class="ui-head">
+                <span class="ui-check on">&#10003;</span>
+                <span class="ui-title">Input schema</span>
+                <span class="ui-sub">read-only</span>
+              </div>
+              <div class="ui-body">
+                <div class="ui-grid">
+                  <div class="ui-th">Name</div>
+                  <div class="ui-th">varName</div>
+                  <div class="ui-th">Description</div>
+                  <div class="ui-th">Datatype</div>
+                  <div class="ui-th ui-center">Req</div>
+                  <div class="ui-th"></div>
+
+                  <div><span class="ui-field">Alert ID</span></div>
+                  <div><span class="ui-field mono">alert_id</span></div>
+                  <div><span class="ui-field">SIEM alert identifier.</span></div>
+                  <div><span class="ui-field">string</span></div>
+                  <div class="ui-center"><span class="ui-check on">&#10003;</span></div>
+                  <div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <figcaption>
+            No disabled form controls, no greyed-out inputs &mdash; the fields render as plain text, and the one
+            available action is promoted into the banner.
+          </figcaption>
+        </figure>
+      </section>
+
+      <section id="validation">
+        <h2 class="section-title"><span class="num">05</span> Validation</h2>
+        <h3>What the builder refuses, and when</h3>
+
+        <div class="scroller">
+          <table>
+            <thead>
+              <tr><th>Rule</th><th>Fires</th><th>Why it exists</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="wrap"><code>varName</code> is present</td>
+                <td>on blur</td>
+                <td class="wrap">It is the property key; there is no schema without it.</td>
+              </tr>
+              <tr>
+                <td class="wrap"><code>varName</code> matches <code>^[a-z][a-z0-9_]{0,63}$</code></td>
+                <td>on blur</td>
+                <td class="wrap">Asoar's binding reference grammar accepts only <code>[A-Za-z0-9_]+</code> after the dot. A space or hyphen makes the field unreachable from any workflow.</td>
+              </tr>
+              <tr>
+                <td class="wrap"><code>varName</code> is unique within its section</td>
+                <td>on blur</td>
+                <td class="wrap">Duplicate keys silently collapse into one property.</td>
+              </tr>
+              <tr>
+                <td class="wrap"><code>name</code> at most 120 characters, <code>description</code> at most 2000</td>
+                <td>while typing</td>
+                <td class="wrap">Mirrors the limits the contract already places on the agent's own name and description.</td>
+              </tr>
+              <tr>
+                <td class="wrap">An enabled section has at least one row</td>
+                <td>at publish</td>
+                <td class="wrap">Distinguishes "no structured input" from an unfinished draft.</td>
+              </tr>
+              <tr>
+                <td class="wrap">Blank <code>name</code> and <code>description</code> are dropped</td>
+                <td>at compile</td>
+                <td class="wrap">Emitting <code>""</code> changes the digest, which mints a new version for a field nobody filled in.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p>
+          Input and output are separate namespaces. A <code>verdict</code> in both is legal and common; the
+          uniqueness check never spans the two sections.
+        </p>
+      </section>
+
+      <section id="contract">
+        <h2 class="section-title"><span class="num">06</span> Rules from the contract</h2>
+        <h3>Five behaviours this UI does not get to choose</h3>
+
+        <p>
+          The builder sits at the head of a pipeline that ends in a workflow binding. Everything downstream
+          already has a specification, and four of the rules above fall straight out of it.
+        </p>
+
+        <figure>
+          <div class="plate">
+<pre class="mermaid">
+flowchart LR
+  A["Builder rows"] --> B["compile"]
+  B --> C["input_schema"]
+  B --> D["output_schema"]
+  E["limits"] --> F
+  C --> F["canonical JSON<br/>RFC 8785"]
+  D --> F
+  F --> G["sha256 digest"]
+  G --> H["Published version<br/>immutable"]
+  H --> I["Asoar node<br/>snapshot + digest"]
+  I --> J["$nodes.triage.output.verdict"]
+</pre>
+          </div>
+          <figcaption>
+            From table row to workflow binding. The digest covers the two schemas and the limits, so any edit
+            in this UI changes it.
+          </figcaption>
+        </figure>
+
+        <dl class="glance">
+          <div>
+            <dt>Both keys are mandatory</dt>
+            <dd>The contract lists <code>input_schema</code> and <code>output_schema</code> as required. Disabling a section emits an empty object schema; it never omits the key.</dd>
+          </div>
+          <div>
+            <dt>Identifiers must be bindable</dt>
+            <dd>The node schema's reference pattern accepts <code>[A-Za-z0-9_]+</code> after the final dot. The builder enforces a stricter lowercase form so the same name is legal in every position.</dd>
+          </div>
+          <div>
+            <dt>The digest must be stable</dt>
+            <dd>It is sha256 over the canonical JSON of the two schemas plus limits. Empty strings and empty arrays are real content, so the compiler omits them rather than emitting them.</dd>
+          </div>
+          <div>
+            <dt>Published means frozen</dt>
+            <dd>Published versions are immutable and workflows pin <code>agent_id@version</code>. The builder is a draft-only editor; opening a published version is read-only.</dd>
+          </div>
+          <div>
+            <dt>Row order is the UI's problem</dt>
+            <dd>JSON object keys carry no order and canonicalization sorts them. Author-visible ordering has to live in the platform's own draft record, not in the emitted schema.</dd>
+          </div>
+        </dl>
+
+        <div class="idea warn">
+          <span class="label">A consequence worth telling authors about</span>
+          <p>
+            Because <code>name</code> is emitted as <code>title</code> <em>inside</em> the schema, it sits inside
+            the digest. Correcting a typo in a display label is therefore a new agent version, exactly as if the
+            type had changed.
+          </p>
+          <p>
+            This is correct &mdash; the digest is what lets Asoar detect drift &mdash; but it is surprising. The
+            publish confirmation should say what changed, so "I only fixed a label" does not read as a bug.
+          </p>
+        </div>
+      </section>
+
+      <section id="subset">
+        <h2 class="section-title"><span class="num">07</span> What it cannot express</h2>
+        <h3>The builder covers a subset, and that is a deliberate choice</h3>
+
+        <p>
+          The contract accepts any JSON Schema 2020-12. The builder emits a narrow, flat slice of it. Agents
+          needing more remain valid and can be authored through the API &mdash; but they cannot be round-tripped
+          through this screen.
+        </p>
+
+        <p>
+          The cost is concrete. The <code>alert-triage</code> agent used throughout this repo's own fixtures and
+          examples is <em>not</em> authorable here: its <code>alert</code> input is an opaque object, and its
+          <code>severity</code> and <code>verdict</code> outputs are enums. Under a primitives-only picker those
+          enums degrade to bare strings and the constraint is lost.
+        </p>
+
+        <div class="scroller">
+          <table>
+            <thead>
+              <tr><th>Capability</th><th>v1</th><th>Cost of leaving it out</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="code">enum</td>
+                <td><span class="chip bad">no</span></td>
+                <td class="wrap">Closed value sets become free strings. The most commonly wanted addition, and the one that most improves structured-output reliability.</td>
+              </tr>
+              <tr>
+                <td class="code">array</td>
+                <td><span class="chip bad">no</span></td>
+                <td class="wrap">An agent cannot return a list &mdash; several IOCs, several recommended actions.</td>
+              </tr>
+              <tr>
+                <td class="code">object</td>
+                <td><span class="chip bad">no</span></td>
+                <td class="wrap">No pass-through of an opaque upstream payload such as a whole alert body.</td>
+              </tr>
+              <tr>
+                <td class="wrap">Nested properties</td>
+                <td><span class="chip bad">no</span></td>
+                <td class="wrap">Deliberate and permanent. Flatness is the point of this design, not a v1 limitation.</td>
+              </tr>
+              <tr>
+                <td class="wrap">Numeric and string bounds</td>
+                <td><span class="chip bad">no</span></td>
+                <td class="wrap">Ranges and patterns live in the description as prose, where only the model reads them.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="idea good">
+          <span class="label">The additive path</span>
+          <p>
+            Add <strong>enum</strong> first &mdash; a value list on a string row, no layout change beyond one
+            sub-editor. Then <strong>array of primitive</strong>, which needs only a second type picker for the
+            item type. Then <strong>opaque object</strong>, a single datatype entry emitting
+            <code>{"type":"object"}</code> with no child rows.
+          </p>
+          <p>
+            All three are additive to the contract and none disturbs the flat row model, so shipping the
+            primitives-only version first costs nothing later.
+          </p>
+        </div>
+      </section>
+
+      <section id="settle">
+        <h2 class="section-title"><span class="num">08</span> What to settle</h2>
+        <h3>Open questions for the platform team</h3>
+
+        <dl class="glance">
+          <div>
+            <dt>1 &middot; Does strict mode override the Required toggle?</dt>
+            <dd>Some providers' structured-output modes require every property to appear in <code>required</code> with <code>additionalProperties: false</code>. If the platform uses one, the toggle on the output side is decorative and should be hidden rather than silently ignored.</dd>
+          </div>
+          <div>
+            <dt>2 &middot; How does the builder open a schema it cannot edit?</dt>
+            <dd>An agent authored via the API with enums or nesting has no row representation. Read-only with an explanation, or a full JSON editor as an escape hatch?</dd>
+          </div>
+          <div>
+            <dt>3 &middot; Where does row order live?</dt>
+            <dd>It cannot live in the schema. Does the draft record gain an order column, or do authors accept alphabetical rendering?</dd>
+          </div>
+          <div>
+            <dt>4 &middot; Should labels be inside the digest at all?</dt>
+            <dd>Moving <code>title</code> out to platform metadata would stop label edits minting versions &mdash; but Asoar renders from the snapshot alone and would lose the labels entirely.</dd>
+          </div>
+          <div>
+            <dt>5 &middot; Is there a field-count ceiling?</dt>
+            <dd>Flat schemas with very many fields degrade structured-output quality. A soft warning past some count may be worth more than a hard cap.</dd>
+          </div>
+          <div>
+            <dt>6 &middot; Does the draft validate against the platform before publish?</dt>
+            <dd>The builder can check shape locally, but only the platform knows whether the model config can honour the schema it was given.</dd>
+          </div>
+        </dl>
+      </section>
+
+      <footer>
+        <p>
+          Companion to <code>docs/design/agent-nodes.md</code>. The contract this UI produces is specified by
+          <code>schemas/agent-version-contract.schema.json</code>; the binding grammar that constrains
+          <code>varName</code> is in <code>schemas/agent-node.schema.json</code>. Draft &mdash; the datatype set
+          and the open questions above are not yet settled.
+        </p>
+      </footer>
+
+    </main>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/11.15.0/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, securityLevel: "strict" });</script>
+
+</body>
+</html>
