@@ -628,7 +628,7 @@
               <div class="ui-head">
                 <span class="ui-check on">&#10003;</span>
                 <span class="ui-title">Input schema</span>
-                <span class="ui-sub">3 fields</span>
+                <span class="ui-sub">4 fields</span>
                 <span class="ui-btn">+ Add field</span>
               </div>
               <div class="ui-body">
@@ -640,23 +640,30 @@
                   <div class="ui-th ui-center">Req</div>
                   <div class="ui-th"></div>
 
-                  <div><span class="ui-field">Alert ID</span></div>
-                  <div><span class="ui-field mono">alert_id</span></div>
-                  <div><span class="ui-field">SIEM alert identifier.</span></div>
+                  <div><span class="ui-field">Sender</span></div>
+                  <div><span class="ui-field mono">sender</span></div>
+                  <div><span class="ui-field">The From address as received.</span></div>
                   <div><span class="ui-field sel">string</span></div>
                   <div class="ui-center"><span class="ui-check on">&#10003;</span></div>
                   <div class="ui-center"><span class="ui-del">&#9003;</span></div>
 
-                  <div><span class="ui-field">Reported URL</span></div>
-                  <div><span class="ui-field mono">reported_url</span></div>
-                  <div><span class="ui-field">The URL the user reported.</span></div>
+                  <div><span class="ui-field">Subject</span></div>
+                  <div><span class="ui-field mono">subject</span></div>
+                  <div><span class="ui-field">The email's subject line.</span></div>
                   <div><span class="ui-field sel">string</span></div>
                   <div class="ui-center"><span class="ui-check on">&#10003;</span></div>
                   <div class="ui-center"><span class="ui-del">&#9003;</span></div>
 
-                  <div><span class="ui-field">Priority</span></div>
-                  <div><span class="ui-field mono">priority</span></div>
-                  <div><span class="ui-field">1&ndash;5, where 1 is most urgent.</span></div>
+                  <div><span class="ui-field">Body</span></div>
+                  <div><span class="ui-field mono">body</span></div>
+                  <div><span class="ui-field">The plain-text body of the email.</span></div>
+                  <div><span class="ui-field sel">string</span></div>
+                  <div class="ui-center"><span class="ui-check on">&#10003;</span></div>
+                  <div class="ui-center"><span class="ui-del">&#9003;</span></div>
+
+                  <div><span class="ui-field">Link count</span></div>
+                  <div><span class="ui-field mono">link_count</span></div>
+                  <div><span class="ui-field">How many links the body contains.</span></div>
                   <div><span class="ui-field sel">integer</span></div>
                   <div class="ui-center"><span class="ui-check">&#10003;</span></div>
                   <div class="ui-center"><span class="ui-del">&#9003;</span></div>
@@ -798,8 +805,9 @@
         <h3>Six rows, two schemas</h3>
 
         <p>
-          A phishing-triage agent. The rows on the left are exactly what the author typed; the JSON on the
-          right is what the builder emits and the platform stores.
+          A phishing-triage agent: it reads a reported email and decides whether it is phishing. The rows on
+          the left are exactly what the author typed; the JSON on the right is what the builder emits and the
+          platform stores.
         </p>
 
         <div class="pair">
@@ -811,9 +819,10 @@
                   <tr><th>Name</th><th>varName</th><th>Type</th><th>Req</th></tr>
                 </thead>
                 <tbody>
-                  <tr><td>Alert ID</td><td class="code">alert_id</td><td class="code">string</td><td><span class="chip good">yes</span></td></tr>
-                  <tr><td>Reported URL</td><td class="code">reported_url</td><td class="code">string</td><td><span class="chip good">yes</span></td></tr>
-                  <tr><td>Priority</td><td class="code">priority</td><td class="code">integer</td><td><span class="chip neutral">no</span></td></tr>
+                  <tr><td>Sender</td><td class="code">sender</td><td class="code">string</td><td><span class="chip good">yes</span></td></tr>
+                  <tr><td>Subject</td><td class="code">subject</td><td class="code">string</td><td><span class="chip good">yes</span></td></tr>
+                  <tr><td>Body</td><td class="code">body</td><td class="code">string</td><td><span class="chip good">yes</span></td></tr>
+                  <tr><td>Link count</td><td class="code">link_count</td><td class="code">integer</td><td><span class="chip neutral">no</span></td></tr>
                 </tbody>
               </table>
             </div>
@@ -823,23 +832,28 @@
 <pre class="code">{
   <span class="k">"type"</span>: <span class="s">"object"</span>,
   <span class="k">"properties"</span>: {
-    <span class="k">"alert_id"</span>: {
-      <span class="k">"title"</span>: <span class="s">"Alert ID"</span>,
-      <span class="k">"description"</span>: <span class="s">"SIEM alert identifier."</span>,
+    <span class="k">"sender"</span>: {
+      <span class="k">"title"</span>: <span class="s">"Sender"</span>,
+      <span class="k">"description"</span>: <span class="s">"The From address as received."</span>,
       <span class="k">"type"</span>: <span class="s">"string"</span>
     },
-    <span class="k">"reported_url"</span>: {
-      <span class="k">"title"</span>: <span class="s">"Reported URL"</span>,
-      <span class="k">"description"</span>: <span class="s">"The URL the user reported."</span>,
+    <span class="k">"subject"</span>: {
+      <span class="k">"title"</span>: <span class="s">"Subject"</span>,
+      <span class="k">"description"</span>: <span class="s">"The email's subject line."</span>,
       <span class="k">"type"</span>: <span class="s">"string"</span>
     },
-    <span class="k">"priority"</span>: {
-      <span class="k">"title"</span>: <span class="s">"Priority"</span>,
-      <span class="k">"description"</span>: <span class="s">"1-5, where 1 is most urgent."</span>,
+    <span class="k">"body"</span>: {
+      <span class="k">"title"</span>: <span class="s">"Body"</span>,
+      <span class="k">"description"</span>: <span class="s">"The plain-text body of the email."</span>,
+      <span class="k">"type"</span>: <span class="s">"string"</span>
+    },
+    <span class="k">"link_count"</span>: {
+      <span class="k">"title"</span>: <span class="s">"Link count"</span>,
+      <span class="k">"description"</span>: <span class="s">"How many links the body contains."</span>,
       <span class="k">"type"</span>: <span class="s">"integer"</span>
     }
   },
-  <span class="k">"required"</span>: [<span class="s">"alert_id"</span>, <span class="s">"reported_url"</span>],
+  <span class="k">"required"</span>: [<span class="s">"sender"</span>, <span class="s">"subject"</span>, <span class="s">"body"</span>],
   <span class="k">"additionalProperties"</span>: <span class="n">false</span>
 }</pre>
           </div>
@@ -868,7 +882,7 @@
   <span class="k">"properties"</span>: {
     <span class="k">"verdict"</span>: {
       <span class="k">"title"</span>: <span class="s">"Verdict"</span>,
-      <span class="k">"description"</span>: <span class="s">"benign, suspicious, or malicious."</span>,
+      <span class="k">"description"</span>: <span class="s">"legitimate, suspicious, or phishing."</span>,
       <span class="k">"type"</span>: <span class="s">"string"</span>
     },
     <span class="k">"confidence"</span>: {
@@ -942,21 +956,21 @@
                   <div class="ui-th ui-center">Req</div>
                   <div class="ui-th"></div>
 
-                  <div><span class="ui-field">Reported URL</span></div>
-                  <div><span class="ui-field mono bad">Reported URL</span></div>
-                  <div><span class="ui-field">The URL the user reported.</span></div>
+                  <div><span class="ui-field">Reply-to</span></div>
+                  <div><span class="ui-field mono bad">Reply To</span></div>
+                  <div><span class="ui-field">The Reply-To address, when it differs.</span></div>
                   <div><span class="ui-field sel">string</span></div>
                   <div class="ui-center"><span class="ui-check on">&#10003;</span></div>
                   <div class="ui-center"><span class="ui-del">&#9003;</span></div>
-                  <span class="ui-msg">Use lowercase letters, digits and underscores, starting with a letter. Try <strong>reported_url</strong>.</span>
+                  <span class="ui-msg">Use lowercase letters, digits and underscores, starting with a letter. Try <strong>reply_to</strong>.</span>
 
-                  <div><span class="ui-field">Alert reference</span></div>
-                  <div><span class="ui-field mono bad">alert_id</span></div>
+                  <div><span class="ui-field">Message body</span></div>
+                  <div><span class="ui-field mono bad">body</span></div>
                   <div><span class="ui-field ph">Optional</span></div>
                   <div><span class="ui-field sel">string</span></div>
                   <div class="ui-center"><span class="ui-check on">&#10003;</span></div>
                   <div class="ui-center"><span class="ui-del">&#9003;</span></div>
-                  <span class="ui-msg"><strong>alert_id</strong> is already used by another field in this section.</span>
+                  <span class="ui-msg"><strong>body</strong> is already used by another field in this section.</span>
                 </div>
               </div>
             </div>
@@ -990,9 +1004,9 @@
                   <div class="ui-th ui-center">Req</div>
                   <div class="ui-th"></div>
 
-                  <div><span class="ui-field">Alert ID</span></div>
-                  <div><span class="ui-field mono">alert_id</span></div>
-                  <div><span class="ui-field">SIEM alert identifier.</span></div>
+                  <div><span class="ui-field">Sender</span></div>
+                  <div><span class="ui-field mono">sender</span></div>
+                  <div><span class="ui-field">The From address as received.</span></div>
                   <div><span class="ui-field">string</span></div>
                   <div class="ui-center"><span class="ui-check on">&#10003;</span></div>
                   <div></div>
@@ -1142,6 +1156,13 @@ flowchart LR
           enums degrade to bare strings and the constraint is lost.
         </p>
 
+        <p>
+          The phishing example in section 03 flatters the flat model, because an email's parts genuinely are
+          scalars: a sender, a subject, a body. Push the same agent one step further and the fit ends. Its
+          attachment names are a list, its raw headers are an opaque blob, and its verdict is a closed set of
+          three values &mdash; none of which has a representation here.
+        </p>
+
         <div class="scroller">
           <table>
             <thead>
@@ -1156,12 +1177,12 @@ flowchart LR
               <tr>
                 <td class="code">array</td>
                 <td><span class="chip bad">no</span></td>
-                <td class="wrap">An agent cannot return a list &mdash; several IOCs, several recommended actions.</td>
+                <td class="wrap">No list in either direction &mdash; the email's attachment names going in, or the indicators the agent found coming out.</td>
               </tr>
               <tr>
                 <td class="code">object</td>
                 <td><span class="chip bad">no</span></td>
-                <td class="wrap">No pass-through of an opaque upstream payload such as a whole alert body.</td>
+                <td class="wrap">No pass-through of an opaque payload such as the email's raw headers.</td>
               </tr>
               <tr>
                 <td class="wrap">Nested properties</td>
